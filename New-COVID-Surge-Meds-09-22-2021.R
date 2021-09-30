@@ -140,6 +140,11 @@ new_med_admin_list <- list.files(path= paste0(wrk.dir,"//Med Admin - Phase2"), f
 new_med_admin_raw <-  read_excel(new_med_admin_list, col_names = TRUE, na = c("", "NA"))
 
 
+new_med_admin_raw <- new_med_admin_raw %>% mutate(MedGroup=toupper(gsub("([A-Za-z]+).*", "\\1", DISPINSABLE_MED_NAME)),
+                                                  MedGroup=ifelse(MedGroup == "NOREPINEPHRINE",  "NOREPINEPHRINE BITARTRATE", MedGroup))
+
+                                                                  
 
 
 
+ 
