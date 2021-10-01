@@ -1,0 +1,193 @@
+---
+author: "HSO"
+date: "5/27/2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: true
+    fig_width: 7
+    fig_height: 6
+---
+```{r Install and load packages, echo = FALSE, warning = FALSE, message = FALSE}
+# Code for analyzing and summarizing unit level census and COVID-19 census data ----------------------
+
+#Install and load necessary packages --------------------
+#install.packages("readraw_dfl")
+#install.packages("writeraw_dfl")
+#install.packages("ggplot2")
+#install.packages("lubridate")
+#install.packages("dplyr")
+#install.packages("reshape2")
+#install.packages("svDialogs")
+#install.packages("stringr")
+#install.packages("formattable")
+# install.packages("ggpubr")
+# install.packages("tidyr")
+#install.packages("pandoc")
+
+#Importing Libraries
+library(readxl)
+library(writexl)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(zoo)
+library(reshape2)
+library(svDialogs)
+library(stringr)
+library(formattable)
+library(scales)
+library(ggpubr)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(grid)
+library(gridExtra)
+library(ggpubr)
+library(tcltk)
+library(data.table)
+library(plotly)
+#library(pandoc)
+# library(tidyr)
+```
+
+<style type="text/css">
+div.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r mapping, echo = FALSE, warning = FALSE, message = FALSE}
+# Set working directory and select raw data ----------------------------
+rm(list = ls())
+
+```
+
+
+
+```{r Graph asthetics, echo = FALSE, warning = FALSE, message = FALSE}
+### Color Functions for Graphs ============================================================
+
+# Mount Sinai corporate colors "USE THIS TO ADD COLORS"
+MountSinai_colors <- c(
+  `dark purple`  = "#212070",
+  `dark pink`    = "#d80b8c",
+  `dark blue`    = "#00aeef",
+  `dark grey`    = "#7f7f7f",
+  `yellow`       = "#ffc000",
+  `purple`       = "#7030a0",
+  `med purple`   = "#5753d0",
+  `med pink`     = "#f75dbe",
+  `med blue`     = "#5cd3ff",
+  `med grey`     = "#a5a7a5",
+  `light purple` = "#c7c6ef",
+  `light pink`   = "#fcc9e9",
+  `light blue`   = "#c9f0ff",
+  `light grey`   = "#dddedd"
+  )
+
+# Function to extract Mount Sinai colors as hex codes
+# Use Character names of MountSinai_colors
+
+MountSinai_cols <- function(...) {
+  cols <- c(...)
+  
+  if (is.null(cols))
+    return (MountSinai_colors)
+  
+  MountSinai_colors[cols]
+}
+
+# Color Function that can be used to call all colors is "MountSinai_cols()"
+# Use in ggplot 
+
+  #MountSinai_cols()       # will provide all colors and their hex codes in a table 
+  #MountSinai_cols("pink") # will provide color name and the hex code for the pink color
+
+# Create palettes 
+MountSinai_palettes <- list(
+  `all`   = MountSinai_cols("dark purple","dark pink","dark blue","dark grey",
+                            "med purple","med pink","med blue","med grey", 
+                            "light purple","light pink","light blue","light grey"),
+  
+  `main`  = MountSinai_cols("dark purple","dark pink","dark blue","dark grey"),
+  
+  `purple`  = MountSinai_cols("dark purple","med purple","light purple"),
+  
+  `pink`  = MountSinai_cols("dark pink","med pink","light pink"),
+  
+  `blue`  = MountSinai_cols("dark blue", "med blue", "light blue"),
+  
+  `grey`  = MountSinai_cols("dark grey", "med grey", "light grey"),
+  
+  `purpleGrey` = MountSinai_cols("dark purple", "dark grey"),
+  
+  `pinkBlue` = MountSinai_cols("dark pink", "dark blue")
+  
+)
+
+# MountSinai_palettes
+# Return function to interpolate a Mount Sinai color palette
+# default value is the main palette, reverse = True will change the order
+
+MountSinai_pal <- function(palette = "all", reverse = FALSE, ...) {
+  pal <- MountSinai_palettes[[palette]]
+  
+  if (reverse) pal <- rev(pal)
+  
+  colorRampPalette(pal, ...)
+}
+
+
+
+# Scale Function for ggplot can be used instead of scale_color_manual
+scale_color_MountSinai <- function(palette = "all", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- MountSinai_pal(palette = palette, reverse = reverse)
+  
+  if (discrete) {
+    discrete_scale("colour", paste0("MountSinai_", palette), palette = pal, ...)
+  } else {
+    scale_color_gradientn(colours = pal(256), ...)
+  }
+}
+
+# Scale Fill for ggplot insetead of scale_fill_manual 
+scale_fill_MountSinai <- function(palette = "all", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- MountSinai_pal(palette = palette, reverse = reverse)
+
+  if (discrete) {
+    discrete_scale("fill", paste0("MountSinai_", palette), palette = pal, ...)
+  } else {
+    scale_fill_gradientn(colours = pal(256), ...)
+  }
+}
+
+# Use in ggplot 
+  # scale_color_MountSinai("main")
+
+```
+
+
+
+```{r Import data, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Setting Dashboard Date Range
+today_date <- Sys.Date() - 1
+report_run_date <- Sys.Date()
+admin_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+admin_repo_end_date <- today_date
+inv_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+inv_repo_end_date <- today_date
+
+
+```
+
+
+```
+
+
+
