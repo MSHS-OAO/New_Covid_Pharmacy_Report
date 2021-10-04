@@ -3,7 +3,7 @@
 
 rm(list=ls())
 
-# Import Libraries
+ # Import Libraries
 
 library(readxl)
 library(writexl)
@@ -44,15 +44,15 @@ files = rownames(inv_list)[1:count]
 new_inventory_raw <- lapply(files, function(filename){
   read_excel(filename, col_names = TRUE, na = c("", "NA"))})
 
-inv_daily_df <-  do.call(rbind.data.frame,  new_inventory_raw )
+#Add Date Column
+new_inventory_raw <- lapply(new_inventory_raw,transform, UpdateDate = as.Date(LAST_UPDATE_TIME,  format = "%d-%b-%y"))
+new_inventory_raw <- lapply(new_inventory_raw,transform,ReportDate =  as.Date(max(LAST_UPDATE_TIME),origin = "2020-01-01")-1)
 
+
+inv_daily_df <-  do.call(rbind.data.frame,  new_inventory_raw )
 rm(inv_list, new_inventory_raw)
 
 
-
-#Add Date Column
-inv_daily_df <- inv_daily_df %>% mutate(UpdateDate = as.Date(LAST_UPDATE_TIME, format = "%d-%b-%y"),
-                                                  ReportDate =  as.Date(max(LAST_UPDATE_TIME),origin = "2020-01-01")-1)
 
                                                                       
 # Add Site 
@@ -145,26 +145,26 @@ inv_site_summary <- inv_daily_df  %>%
   ungroup()
 
 
-inv_site_summary$MedGroup <- toupper(gsub("([A-Za-z]+).*", "\\1", inv_site_summary$PRD_NAME))
-inv_site_summary$MedGroup <- ifelse(inv_site_summary$MedGroup == "NOREPINEPHRINE",
-                                    "NOREPINEPHRINE BITARTRATE", inv_site_summary$MedGroup)
+inv_site_summary <- inv_site_summary %>% mutate(MedGroup= toupper(gsub("([A-Za-z]+).*", "\\1", PRD_NAME)),
+                                                MedGroup= ifelse(MedGroup == "NOREPINEPHRINE",  "NOREPINEPHRINE BITARTRATE", MedGroup))
+                                                                
+
 
 
 inv_site_summary <- inv_site_summary [!duplicated(inv_site_summary), ]
-
-# Add med class
-inv_site_summary$med_class <- covid_med_groups$Classification[match(inv_site_summary$MedGroup, covid_med_groups$`Medication Group`)]
-inv_site_summary <- inv_site_summary %>% filter(med_class == "COVID")
 
 
 # Bind today's data with repository
 inv_final_repo <- rbind(inv_repo, inv_site_summary)
 
+inv_final_repo$med_class <- covid_med_groups$Classification[match(inv_final_repo$MedGroup, covid_med_groups$`Medication Group`)]
+
+inv_final_repo <- inv_final_repo %>% filter(med_class == "COVID")
+
+
 
 # Save the new repo
-end_date <- max(inv_final_repo$ReportDate)
-
-write_xlsx(inv_final_repo, path = paste0(wrk.dir, "\\REPO\\Inv_Repo\\Covid Surge Meds Inventory Repo-", end_date, ".xlsx"))
+write_xlsx(inv_final_repo, path = paste0(wrk.dir, "\\REPO\\Inv_Repo\\Covid Surge Meds Inventory Repo-", Sys.Date()-1, ".xlsx"))
 rm(inv_repo, inv_site_summary, inv_daily_df)
 
 
@@ -203,11 +203,11 @@ new_med_admin <- new_med_admin[!duplicated(new_med_admin), ]
 new_med_admin$med_class <- covid_med_groups$Classification[match(new_med_admin$MedGroup, covid_med_groups$`Medication Group`)]
 
 #Filter Covid data
-covid_mar_data <- new_med_admin %>% filter(med_class == "COVID")
+new_med_admin <- new_med_admin %>% filter(med_class == "COVID")
 
 ##  Missing ndc id and code
 
-common_ndc <- covid_mar_data %>%
+common_ndc <- new_med_admin %>%
   filter(!is.na(NDC_ID)) %>%
   group_by(LOC_NAME, DISPINSABLE_MED_NAME, NDC_ID) %>%
   summarise(total = n()) %>%
@@ -216,25 +216,23 @@ common_ndc <- covid_mar_data %>%
 
 colnames(common_ndc)[colnames(common_ndc) == "NDC_ID"] <- "ndc"
 
-no_ndc <- covid_mar_data %>% filter(is.na(NDC_ID))
+no_ndc <- new_med_admin %>% filter(is.na(NDC_ID))
 no_ndc <- merge(no_ndc, common_ndc[,c("LOC_NAME","DISPINSABLE_MED_NAME","ndc")], 
                 by.x = c("LOC_NAME","DISPINSABLE_MED_NAME"), by.y = c("LOC_NAME","DISPINSABLE_MED_NAME"))
 
 no_ndc$NDC_ID <- no_ndc$ndc
 no_ndc <- no_ndc[,1:26]
 
-covid_mar_data <- covid_mar_data %>% filter(!is.na(NDC_ID))
-covid_mar_data <- rbind(covid_mar_data, no_ndc)
+new_med_admin <-new_med_admin %>% filter(!is.na(NDC_ID))
+new_med_admin <- rbind(new_med_admin, no_ndc)
 
 rm(no_ndc)
 
 
 
 # Calculate total daily usage by patient
-covid_meds_admin <- covid_mar_data 
-
 # Data Exclusion Criteria: Exclude ADMIN_REASON = "Bolus from Infusion"
-covid_meds_admin <- covid_meds_admin %>%
+covid_meds_admin <- new_med_admin %>%
   filter(ADMIN_REASON != "Bolus from Infusion")
 
 # Format columns
@@ -355,20 +353,143 @@ med_final_repo <- rbind(med_repo, covid_meds_admin)
 
 
 # Save the new repo
-write_xlsx(inv_final_repo, path = paste0(wrk.dir, "\\REPO\\Med_Repo\\Covid Surge Meds Admin Repo-", Sys.Date()-1, ".xlsx"))
+write_xlsx(med_final_repo, path = paste0(wrk.dir, "\\REPO\\Med_Repo\\Covid Surge Meds Admin Repo-", Sys.Date()-1, ".xlsx"))
 
 
 
 
-# Line 590
+#----------- Map admin and inventory data using ndc  --------------
+
+admin_aggregated <- med_final_repo
+inventory_data <- inv_final_repo
+
+admin_aggregated <- med_repo
+inventory_data <- inv_repo
 
 
-                                                                 
+
+# Pull in inventory unit
+admin_aggregated$PRD_NAME <- inventory_data$PRD_NAME[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcDoseSize_inv <- inventory_data$ConcDoseSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcDoseUnit_inv <- as.character(inventory_data$ConcDoseUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)])
+admin_aggregated$ConcVolSize_inv <- inventory_data$ConcVolSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcVolUnit_inv <- inventory_data$ConcVolUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$NormDoseSize_inv <- inventory_data$NormDoseSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$NormDoseUnit_inv <- inventory_data$NormDoseUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$inv_size <- inventory_data$InvSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$inv_unit <- toupper(inventory_data$InvUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)])
+admin_aggregated$TotalDosesPerInv <- admin_aggregated$NormDoseSize_inv*admin_aggregated$inv_size
+
+admin_aggregated$NormDoseUnit_inv[which(admin_aggregated$NormDoseUnit_inv == "UNIT/ML")] <- "UNITS/ML" 
+admin_aggregated$ConcDoseUnit_inv[which(admin_aggregated$ConcDoseUnit_inv == "UNIT")] <- "UNITS"
+
+# Filter out administrations wihtout inventory mapping by ndc id
+#meds_wo_inv_mapping <- admin_aggregated %>% filter(is.na(inv_unit))
+
+
+admin_aggregated <- admin_aggregated %>% filter(!is.na(inv_unit))
+# write_xlsx(admin_aggregated, "Admin Pre-processed Data.xlsx")
 
 
 
 
 
+# Calculate total inventory used in count 
+#units <- admin_inv_used %>% group_by(inv_unit, total_doses_unit, ConcDoseUnit_inv) %>% summarise(count = n())
+
+
+# ML inventory used --------------------------------------- Based on same inventory NOT shared across multiple administrations
+admin_inv_used_ml <- admin_aggregated %>% filter(inv_unit == "ML") %>%
+  mutate(total_inv_used = ifelse(total_doses_unit == ConcDoseUnit_inv, ceiling(total_doses/TotalDosesPerInv),NA))
+
+### Manual calculation of total inventory used 
+admin_inv_used_ml <- admin_inv_used_ml %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & ADMIN_REASON == "New Bag", 1, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & !is.na(ADMIN_AMOUNT), ceiling(ADMIN_AMOUNT/inv_size), total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used), 1, total_inv_used)) 
+
+
+## Aggregate total inventory used by patient and date
+admin_ml_aggregated <- admin_inv_used_ml %>%
+  group_by(loc_rollup, Admin_Date, PAT_ID, PRD_NAME, inv_size, inv_unit) %>%
+  summarise(total_inv_used = sum(total_inv_used)) %>%
+  mutate(total_inv_count = ceiling(total_inv_used/inv_size))
+
+
+
+
+# EACH inventory used/ Based on same inventory shared across multiple administrations
+admin_aggregated$total_doses_unit[which(admin_aggregated$total_doses_unit == "")] <- NA
+
+admin_inv_used_each <- admin_aggregated %>%
+  filter(inv_unit == "EACH") %>%
+  mutate(total_inv_used = ceiling(ifelse(is.na(total_doses_unit), ADMIN_AMOUNT,
+                                         ifelse(total_doses_unit == ConcDoseUnit_inv, total_doses/TotalDosesPerInv, NA))))
+
+
+
+
+### Manual mapping of concentration: DISPINSABLE_MED_NAME | PRD_NAME (inventory concentration)
+### 1. ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS | ALTEPLASE 50 MG INTRAVENOUS SOLUTION (50mg/50ml)
+### 2. AZITHROMYCIN 500 MG IVPB PYXIS MINIBAG | AZITHROMYCIN 500 MG INTRAVENOUS SOLUTION (500mg/250ml)
+### 3. remdesivir 100 mg intravenous (solution) and remdesivir 100 mg intravenous (powder) (100mg/20ml)
+
+admin_inv_used_each <- admin_inv_used_each %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & DISPINSABLE_MED_NAME == "ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS",
+                                 ORDER_VOLUME/50, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & DISPINSABLE_MED_NAME == "AZITHROMYCIN 500 MG IVPB PYXIS MINIBAG",
+                                 ORDER_VOLUME/250, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & PRD_NAME == "remdesivir 100 mg intravenous (solution)",
+                                 ORDER_VOLUME/20, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & PRD_NAME == "remdesivir 100 mg intravenous (powder)",
+                                 ORDER_VOLUME/20, total_inv_used))
+
+## Aggregate total inventory used by patient and date
+admin_each_aggregated <- admin_inv_used_each %>%
+  group_by(loc_rollup, Admin_Date, PAT_ID, PRD_NAME, inv_size, inv_unit) %>%
+  summarise(total_inv_used = sum(total_inv_used)) %>%
+  mutate(total_inv_count = ceiling(total_inv_used))
+
+
+# ***NOT shared across administrations = 41728 vs. Shared across administrations = 41214*** 
+
+# Merge ML and EACH datasets
+inv_used_merged <- rbind(admin_ml_aggregated, admin_each_aggregated)
+
+inv_used_site <- inv_used_merged %>%
+  group_by(loc_rollup, Admin_Date, PRD_NAME) %>%
+  summarise(total_inv_used = sum(total_inv_count))
+
+
+#Inventory Data Pre-processing
+inv_balance <- inventory_data %>%
+  group_by(ReportDate, Site, MedGroup, InvShortName, InvSizeUnit, PRD_NAME) %>%
+  summarise(total_balance = round(sum(Balance), 0))
+
+inv_balance <- merge(inv_balance, inv_used_site, by.x = c("ReportDate","Site","PRD_NAME"), 
+                     by.y = c("Admin_Date","loc_rollup","PRD_NAME"), all.x = TRUE)
+
+# Format inv_balance to include all missing dates
+inv_unique <- as.data.frame(unique(inv_balance[,c("Site","MedGroup","InvShortName","PRD_NAME","InvSizeUnit")]))
+n <- length(seq(min(inv_balance$ReportDate), max(inv_balance$ReportDate), by = "1 day"))
+inv_bal_df <- do.call("rbind", replicate(n, inv_unique, simplify = FALSE))
+
+
+dates <- data.frame(ReportDate = rep(seq(min(inv_balance$ReportDate), max(inv_balance$ReportDate), by = "1 day"),
+                                     each=nrow(inv_unique)))
+inv_bal_df <- cbind(inv_bal_df, dates)
+inv_bal_df <- inv_bal_df %>% mutate(uniqueId = paste0(ReportDate,Site,PRD_NAME))
+
+inv_balance <- inv_balance %>%  mutate(uniqueId = paste0(ReportDate,Site,PRD_NAME))
+inv_used_site <- inv_used_site %>%  mutate(uniqueId = paste0(Admin_Date,loc_rollup,PRD_NAME))
+
+inv_bal_df$total_balance <- inv_balance$total_balance[match(inv_bal_df$uniqueId, inv_balance$uniqueId)]
+inv_bal_df$total_inv_used <-inv_used_site$total_inv_used[match(inv_bal_df$uniqueId, inv_used_site$uniqueId)]
+
+inv_bal_df[is.na(inv_bal_df)] <- 0 
+
+# Filter our sites
+inv_bal_df <- inv_bal_df %>% filter(Site %in% c("MSB","MSBI","MSH","MSHS Stockpile","MSM","MSQ","MSW"))
 
 
  
