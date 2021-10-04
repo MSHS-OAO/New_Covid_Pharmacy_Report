@@ -63,7 +63,7 @@ div.main-container {
 
 ```{r mapping, echo = FALSE, warning = FALSE, message = FALSE}
 # Set working directory and select raw data ----------------------------
-rm(list = ls())
+#rm(list = ls())
 
 ```
 
@@ -182,12 +182,719 @@ admin_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
 admin_repo_end_date <- today_date
 inv_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
 inv_repo_end_date <- today_date
+```
 
+
+```{r Sinai Logo, echo=FALSE, out.width = '30%'}
+knitr::include_graphics("Mount_Sinai_Logo_H.png")
+```
+
+
+# MSHS Pharmacy Inventory Dashboard
+## HCMLU
+*Report Run Date: `r report_run_date`*<br/>
+*Administration Data Date Range: `r admin_repo_start_date` to `r admin_repo_end_date`*<br/>
+*Inventory Balance Data Date Range: `r inv_repo_start_date` to `r inv_repo_end_date`*<br/>
+___________________________________________________________________________________________________________
+
+```{r Summary of All Medications Function, fig.height=7, echo = FALSE, warning = FALSE, message = FALSE}
+
+all_meds_usage_balance_tb <- function(site) {
+
+  site_name <- site
+  
+   # site_name <- c("MSH")
+   # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  
+  # sites <- unique(inv_bal_df$Site)
+  # sites <- as.vector(sites)
+  # 
+  
+  total_days <- length(unique(inv_bal_df$ReportDate))
+  
+  # Last 30-day Usage Calculations
+  usage_rate <- inv_bal_df %>%
+    filter(Site %in% site_name, ReportDate >= max(inv_bal_df$ReportDate) - 29) %>%
+    group_by(MedGroup, PRD_NAME, InvSizeUnit) %>%
+    summarise(last30_avg = round(sum(total_inv_used)/30,0))
+  
+  # Average last 3 day usage
+  last3_avg <- inv_bal_df %>%
+    filter(Site %in% site_name, ReportDate >= max(inv_bal_df$ReportDate) - 2) %>%
+    group_by(MedGroup, PRD_NAME, InvSizeUnit) %>%
+    summarise(last3_avg = round(sum(total_inv_used)/3,0))
+  
+  usage_rate$last3_avg <- last3_avg$last3_avg[match(usage_rate$PRD_NAME, last3_avg$PRD_NAME)]
+
+  # Inventory Balance Pull
+  todays_inv <- inv_bal_df %>%
+    filter(Site %in% site_name) %>%
+    filter(ReportDate == max(inv_bal_df$ReportDate)) %>%
+    group_by(PRD_NAME) %>%
+    summarise(Balance = sum(total_balance))
+
+  usage_rate$todays_inv_bal <- todays_inv$Balance[match(usage_rate$PRD_NAME, todays_inv$PRD_NAME)]
+
+  days_on_hand_tb <- usage_rate %>%
+    mutate(daysOnHand_last30 = round(todays_inv_bal/last30_avg, 0),
+           daysOnHand_last3 = round(todays_inv_bal/last3_avg, 0)) %>%
+    arrange(MedGroup, PRD_NAME)
+  
+  days_on_hand_tb$daysOnHand_last3[is.nan(days_on_hand_tb$daysOnHand_last3)] <- 0
+  days_on_hand_tb$daysOnHand_last30[is.nan(days_on_hand_tb$daysOnHand_last30)] <- 0
+  
+  # days_on_hand_tb$last30_avg <- prettyNum(days_on_hand_tb$last30_avg, big.mark = ',') 
+  # days_on_hand_tb$last3_avg <- prettyNum(days_on_hand_tb$last3_avg, big.mark = ',') 
+  # days_on_hand_tb$daysOnHand_last30 <- prettyNum(days_on_hand_tb$daysOnHand_last30, big.mark = ',') 
+  # days_on_hand_tb$daysOnHand_last3 <- prettyNum(days_on_hand_tb$daysOnHand_last3, big.mark = ',') 
+
+  
+  days_on_hand_tb %>%
+    mutate(daysOnHand_last30 = ifelse(daysOnHand_last30 > 30,
+                    cell_spec(daysOnHand_last30, background= "green", color = "white", bold = T),
+                    cell_spec(daysOnHand_last30, background = "red", color = "white", bold = T)),
+           daysOnHand_last3 = ifelse(daysOnHand_last3 > 30,
+                    cell_spec(daysOnHand_last3, background= "green", color = "white", bold = T),
+                    cell_spec(daysOnHand_last3, background = "red", color = "white", bold = T))) %>%
+    kable(format = "html", escape = FALSE, align = "l",
+          col.names = c("Medication", "Inventory Name", "Size",  
+                       "Avg Daily Usage <br> (Last 30 Days)", "Avg Daily Usage <br> (Last 3 Days)",
+                       "Today's Inventory Balance", "Days on Hand <br> (Last 30 Days)", "Days on Hand <br> (Last 3 Days)")) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                  position = "center", font_size = 12, full_width = F) %>%
+    row_spec(row = 0, background = "#221f72", color = "white") %>%
+    add_header_above(c("Inventory Usage and Days on Hand" = length(days_on_hand_tb)),
+                       background = "#221f72", color = "white", font_size = 16, align = "center") %>%
+    collapse_rows(columns = 1, valign = "top") %>%
+    column_spec(2, width = "5cm") %>%
+  # column_spec(5:6, width = "1.5cm") %>%
+    footnote(number = c("'Inf' indicates no inventory usage in a gievn time period.",
+                        "'Red' indicates Days on Hand < 30; 'Green' indicates Days on Hand >= 30.")) %>%
+    scroll_box(height = "500px") 
+
+}
 
 ```
 
 
+```{r Last 3 Days Inventory Balance and Usage Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+inv_last3_graph <- function(site, medication) {
+
+  site_name <- site
+  med_name <- medication
+# 
+#    site_name <- c("MSH","MSQ","MSB","MSBI","MSW")
+#    med_name <- "ELVITEG"
+
+  # Inventory Balance in Last 3 Days
+  inv_bal_last3 <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name, ReportDate >= max(inventory_data$ReportDate) -2) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+    site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+
+    if (nrow(inv_bal_last3) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {  
+  
+  max <- inv_bal_last3 %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_balance))
+
+  inv_bal_last3_graph <-
+    ggplot(inv_bal_last3, aes(x=ReportDate, y=total_inv_balance, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    ggtitle(label=paste0("\n",site," ",medication, ": Inventory Balance \nin Last 3 Days by Inventory Item"))+
+    labs(x=NULL, y=NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_bal_last3$inv_new_name))/
+                                    min(length(unique(inv_bal_last3$inv_new_name)),5)))+
+    theme_bw()+
+    theme(plot.title = element_text(size = 18, hjust = 0.5), legend.position = "bottom", legend.box = "vertical",
+          legend.title = element_blank(), legend.text = element_text(size = 10),
+          axis.text.x = element_text(size = 12, angle = 0, hjust = 0.5),
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey"))+
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max$total) < 1000, "",
+                    ifelse(max(max$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max$total) < 1000, 1,
+                    ifelse(max(max$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max$total)*1.2))+
+    scale_x_date(breaks = "day", date_labels = "%Y-%m-%d, \n%A") +
+    geom_text(aes(label=ifelse(total_inv_balance == 0,"",prettyNum(total_inv_balance, big.mark = ','))), color="white",
+              size=4, position = position_stack(vjust = 0.5))+
+    stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+                 geom="text", color="black", fontface="bold", size=4)
+
+ 
+  # Daily Usage in Last 3 Days
+  max_usage <- inv_bal_last3 %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_count_used))
+
+  inv_usage_last3_graph <-
+    ggplot(inv_bal_last3, aes(x=ReportDate, y=total_inv_count_used, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    ggtitle(label=paste0("\n",site," ",medication, ": Inventory Usage \nin Last 3 Days by Inventory Item"))+
+    labs(x=NULL, y=NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_bal_last3$PRD_NAME))/
+                                    min(length(unique(inv_bal_last3$PRD_NAME)),5)))+
+    theme_bw()+
+    theme(plot.title = element_text(size = 18, hjust = 0.5), legend.position = "bottom", legend.box = "vertical",
+          legend.title = element_blank(), legend.text = element_text(size = 10),
+          axis.text.x = element_text(size = 12, angle = 0, hjust = 0.5),
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey"))+
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_usage$total) < 1000, "",
+                    ifelse(max(max_usage$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_usage$total) < 1000, 1,
+                    ifelse(max(max_usage$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_usage$total)*1.2))+
+    scale_x_date(breaks = "day", date_labels = "%Y-%m-%d, \n%A") +
+    geom_text(aes(label=ifelse(total_inv_count_used == 0,"",prettyNum(total_inv_count_used, big.mark = ','))), color="white",
+              size=4, position = position_stack(vjust = 0.5))+
+    stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+                 geom="text", color="black", fontface="bold", size=4)
+  
+
+grid.draw(ggarrange(inv_usage_last3_graph, inv_bal_last3_graph, ncol=2, nrow=1, common.legend = TRUE, legend="bottom"))
+
+}
+}
+
 ```
+
+
+```{r Total Inventory Used Graph Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Inventory Used and Remaining Graph
+inventory_used_graph <- function(site, medication) {
+  
+  site_name <- site
+  med_name <- medication
+
+  # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  # med_name <- "HEPARIN"
+
+  # Inventory Balance 
+  inv_df <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+
+    if (nrow(inv_df) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {
+  
+  max <- inv_df %>% group_by(ReportDate, PRD_NAME) %>% summarise(total = sum(total_inv_count_used))
+  max_unit <- inv_df %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_count_used))
+  site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+  
+  inv_used_graph <- 
+    ggplot(inv_df, aes(x=ReportDate, y=total_inv_count_used, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    #scale_fill_manual(values=MountSinai_pal("main")(length(unique(inv_df$prd_name))), labels = wrap_format(25)) +
+    labs(title = paste0("\n",site," ",medication,": Total Inventory Used"), x = NULL, y = NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
+                                     min(length(unique(inv_df$PRD_NAME)),5)))+
+     theme_bw() +
+     theme(plot.title = element_text(size = 18, hjust = 0.5), 
+          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+          plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
+          axis.title.y=element_text(size=12,face="bold"),
+          axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey")) +
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_unit$total) < 1000, "",
+                    ifelse(max(max_unit$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_unit$total) < 1000, 1,
+                    ifelse(max(max_unit$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_unit$total)*1.2))+
+      scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+    #  geom_text(aes(label=ifelse(total_inv_count_used == 0,"",total_inv_count_used)), color="white",
+    #           size=2, position = position_stack(vjust = 0.5))+
+    # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+    #              geom="text", color="black", fontface="bold", size=2)
+  
+    print(inv_used_graph)
+  
+    }
+}
+
+```
+
+
+```{r Total Inventory Remaining Graph Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Inventory Used and Remaining Graph
+inventory_remaining_graph <- function(site, medication) {
+  
+  site_name <- site
+  med_name <- medication
+
+  # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  # med_name <- "HEPARIN"
+
+  # Inventory Balance 
+  inv_df <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+
+    if (nrow(inv_df) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {
+  
+  max <- inv_df %>% group_by(ReportDate, PRD_NAME) %>% summarise(total = sum(total_inv_balance))
+  max_unit <- inv_df %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_balance))
+  site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+  
+  inv_used_graph <- 
+    ggplot(inv_df, aes(x=ReportDate, y=total_inv_balance, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    #scale_fill_manual(values=MountSinai_pal("main")(length(unique(inv_df$prd_name))), labels = wrap_format(25)) +
+    labs(title = paste0("\n",site," ",medication,": Total Inventory Balance"), x = NULL, y = NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
+                                     min(length(unique(inv_df$PRD_NAME)),5)))+
+     theme_bw() +
+     theme(plot.title = element_text(size = 18, hjust = 0.5), 
+          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+          plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
+          axis.title.y=element_text(size=12,face="bold"),
+          axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey")) +
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_unit$total) < 1000, "",
+                    ifelse(max(max_unit$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_unit$total) < 1000, 1,
+                    ifelse(max(max_unit$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_unit$total)*1.2))+
+      scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+    #  geom_text(aes(label=ifelse(total_inv_balance== 0,"",total_inv_balance)), color="white",
+    #           size=2, position = position_stack(vjust = 0.5))+
+    # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y..,big.mark = ',')), group = ReportDate),
+    #              geom="text", color="black", fontface="bold", size=2)
+  
+    print(inv_used_graph)
+  
+    }
+}
+
+```
+
+
+<!-- # ```{r Days on Hand Graph Function, echo = FALSE, warning = FALSE, message = FALSE} -->
+<!-- #  -->
+<!-- # days_on_hand_graph <- function(site, medication) { -->
+<!-- #  -->
+<!-- #   site_name <- site -->
+<!-- #   med_name <- medication -->
+<!-- #  -->
+<!-- #   site_name <- c("MSB","MSH","MSM","MSQ","MSW") -->
+<!-- #   med_name <- "HEPARIN" -->
+<!-- #    -->
+<!-- #   total_days <- length(unique(inv_bal_df$ReportDate)) -->
+<!-- #    -->
+<!-- #   # Last 30-day Usage Calculations -->
+<!-- #   usage_rate <- inv_bal_df %>% -->
+<!-- #     filter(Site %in% site_name, MedGroup %in% med_name, ReportDate >= max(inv_bal_df$ReportDate) - 29) %>% -->
+<!-- #     group_by(PRD_NAME, InvSizeUnit) %>% -->
+<!-- #     summarise(last30_avg = round(sum(total_inv_used)/30,0)) -->
+<!-- #    -->
+<!-- #   # Average last 3 day usage -->
+<!-- #   last3_avg <- inv_bal_df %>% -->
+<!-- #     filter(Site %in% site_name, MedGroup %in% med_name, ReportDate >= max(inv_bal_df$ReportDate) - 2) %>% -->
+<!-- #     group_by(PRD_NAME, InvSizeUnit) %>% -->
+<!-- #     summarise(last3_avg = round(sum(total_inv_used)/3,0)) -->
+<!-- #    -->
+<!-- #   usage_rate$last3_avg <- last3_avg$last3_avg[match(usage_rate$PRD_NAME, last3_avg$PRD_NAME)] -->
+<!-- #  -->
+<!-- #   # Inventory Balance Pull -->
+<!-- #   todays_inv <- inv_bal_df %>% -->
+<!-- #     filter(Site %in% site_name, MedGroup %in% med_name) %>% -->
+<!-- #     filter(ReportDate == max(inv_bal_df$ReportDate)) %>% -->
+<!-- #     group_by(PRD_NAME) %>% -->
+<!-- #     summarise(Balance = sum(total_balance)) -->
+<!-- #  -->
+<!-- #   usage_rate$todays_inv_bal <- todays_inv$Balance[match(usage_rate$PRD_NAME, todays_inv$PRD_NAME)] -->
+<!-- #  -->
+<!-- #   days_on_hand_tb <- usage_rate %>% -->
+<!-- #     mutate(daysOnHand_last30 = round(todays_inv_bal/last30_avg, 0), -->
+<!-- #            daysOnHand_last3 = round(todays_inv_bal/last3_avg, 0)) %>% -->
+<!-- #     arrange(PRD_NAME) -->
+<!-- #    -->
+<!-- #   days_on_hand_tb$daysOnHand_last3[is.nan(days_on_hand_tb$daysOnHand_last3)] <- 0 -->
+<!-- #   days_on_hand_tb$daysOnHand_last30[is.nan(days_on_hand_tb$daysOnHand_last30)] <- 0 -->
+<!-- #    -->
+<!-- #   days_on_hand_graph <- days_on_hand_tb %>% -->
+<!-- #     select(PRD_NAME, daysOnHand_last30, daysOnHand_last3) %>% -->
+<!-- #     gather(variable, value, 2:3) -->
+<!-- #    -->
+<!-- #    -->
+<!-- #   ggplot(days_on_hand_graph, aes(x=PRD_NAME, y=value, fill=variable)) + -->
+<!-- #     geom_bar(stat="identity", position=position_dodge()) -->
+<!-- #     scale_fill_manual(c("#212070","#7f7f7f"), labels = wrap_format(25))+ -->
+<!-- #     # ggtitle(label=paste0("\n",site," ",medication, ": Inventory Balance \nin Last 3 Days by Inventory Item"))+ -->
+<!-- #     labs(x=NULL, y=NULL)+ -->
+<!-- #     guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_bal_last3$inv_new_name))/ -->
+<!-- #                                     min(length(unique(inv_bal_last3$inv_new_name)),5)))+ -->
+<!-- #     theme_bw()+ -->
+<!-- #     theme(plot.title = element_text(size = 16, hjust = 0.5), legend.position = "bottom", legend.box = "vertical", -->
+<!-- #           legend.title = element_blank(), legend.text = element_text(size = 8), -->
+<!-- #           axis.text.x = element_text(size = 10, angle = 0, hjust = 0.5), -->
+<!-- #           axis.text.y = element_text(size = 10), -->
+<!-- #           panel.grid.major = element_line(color = "lightgrey"), -->
+<!-- #           panel.grid.minor = element_line(color = "lightgrey"))+ -->
+<!-- #     scale_y_continuous(labels = scales::unit_format( -->
+<!-- #       unit = ifelse(max(max$total) < 1000, "", -->
+<!-- #                     ifelse(max(max$total) < 1000000, "K", "M")), -->
+<!-- #       scale = ifelse(max(max$total) < 1000, 1, -->
+<!-- #                     ifelse(max(max$total) < 1000000, 1e-3, 1e-6)), -->
+<!-- #       accuracy = 0.1), -->
+<!-- #       limits = c(0, max(max$total)*1.2))+ -->
+<!-- #     scale_x_date(breaks = "day", date_labels = "%m/%d/%y, \n%A") + -->
+<!-- #     geom_text(aes(label=ifelse(total_inv_balance == 0,"",total_inv_balance)), color="white", -->
+<!-- #               size=3, position = position_stack(vjust = 0.5))+ -->
+<!-- #     stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",..y..), group = ReportDate), -->
+<!-- #                  geom="text", color="black", fontface="bold", size=4) -->
+<!-- #  -->
+<!-- # } -->
+<!-- #  -->
+<!-- # ``` -->
+
+
+```{r MSHS Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  sites <- unique(inv_bal_df$Site)
+  sites <- as.vector(sites)
+  
+  # sites <- c("MSB","MSH","MSM","MSQ","MSW")
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(" \n##","MSHS\n")
+  cat(" \n### All Medications", "\n")
+
+  print(all_meds_usage_balance_tb(sites))
+
+  cat(" \n")
+
+  for(j in meds) {
+
+    cat(" \n###", j, "\n")
+    
+    inv_last3_graph(sites, medication = j)
+    inventory_used_graph(sites, medication = j)
+    inventory_remaining_graph(sites, medication = j)
+
+    cat(" \n")
+  }
+
+```
+
+
+```{r Site Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+# sites <- unique(inv_bal_df$Site)
+# sites <- as.vector(sites)
+
+sites <- c("MSB","MSBI","MSH","MSM","MSQ","MSW")
+
+
+for (i in sites) {
+
+  cat(" \n##", i,"\n")
+  cat(" \n### All Medications", "\n")
+
+  print(all_meds_usage_balance_tb(site = i))
+
+  cat(" \n")
+
+  meds <- inv_bal_df %>% filter(Site == i) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+
+    cat(" \n###", j, "\n")
+    
+    inv_last3_graph(site = i, medication = j)
+    inventory_used_graph(site = i, medication = j)
+    inventory_remaining_graph(site = i, medication = j)
+    cat(" \n")
+
+  }
+  }
+
+```
+
+
+<!-- ```{r MSHS Stockpile Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"} -->
+
+<!--   sites <- "MSHS Stockpile" -->
+
+<!--   meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup) -->
+<!--   meds <- as.vector(unique(meds$MedGroup)) -->
+
+<!--   cat(" \n##","MSHS Stockpile","\n") -->
+<!--   cat(" \n### All Medications", "\n") -->
+
+<!--   print(all_meds_usage_balance_tb(sites)) -->
+
+<!--   for(j in meds) { -->
+
+<!--     cat(" \n###", j, "\n") -->
+<!--     inventory_remaining_graph(sites, medication = j) -->
+<!--     cat(" \n") -->
+<!--   } -->
+
+<!-- ``` -->
+
+
+</br>
+
+
+## *About This Report
+### 1. Data Reports
++ **COVID Surge Med Admin Report** includes patient-level medication administration data; created in EPIC Clarity and updated every midnight.
++ **COVID Surge Med WINV Balance Report** includes inventory balances; pulled from EPIC Willow Inventory every morning at 9:34 AM. 
+
+### 2. ERX and PRD Mapping
++ ERX and PRD mapping was done based on NDC ID. For ERXs missing NDC IDs, most commonly used PRD for the respective ERX at each site was used. 
+<!-- + Below table summarizes the list of medications and their mapped inventory items included in this dashboard by each MSHS site. All inventory items are tracked in count, in a form of either ML (e.g., vials) or EACH (e.g., tablets). The inclusion criteria and mapping were provided by the MSHS Pharmacy team.   -->
+
+
+</br>
+
+
+<!-- # ```{r ERX Inclusion Criteria and PRD Mapping, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE} -->
+<!-- #  -->
+<!-- # inclusion_criteria  <- as.data.frame(unique(inv_options[,c("Site","Medication","InvShortName", "InvUnit", "inv_new_name")])) -->
+<!-- # rownames(inclusion_criteria) <- NULL -->
+<!-- #  -->
+<!-- # inclusion_criteria %>% arrange(Site, Medication, InvShortName) %>% -->
+<!-- #     kable(format = "html", escape = FALSE, align = "l", -->
+<!-- #           col.names =c("Site", "Inventory Group","Inventory Item", "Unit", "Mapped Medication")) %>% -->
+<!-- #     kable_styling(bootstrap_options = c("striped", "condensed", "hover"), position = "center", font_size = 12, full_width = F) %>% -->
+<!-- #     row_spec(row = 0, background = "#b2b3b2", color = "black") %>% -->
+<!-- #     collapse_rows(columns = 1:3, valign = "top") %>% -->
+<!-- #   scroll_box(height = "700px") -->
+<!-- #  -->
+<!-- # ``` -->
+
+
+</br>
+
+
+<!-- ### 3. Location and Service Area Mapping -->
+<!-- ```{r Location - Service Area Roll Up by Site Crosswalk, fig.width = 10, echo = FALSE, warning = FALSE, message = FALSE} -->
+
+<!-- site_crosswalk <- unique(covid_meds_admin[,c("loc_rollup","LOC_NAME","SERV_AREA_NAME")]) -->
+<!-- rownames(site_crosswalk) <- NULL -->
+
+<!-- site_crosswalk %>% arrange(loc_rollup) %>% -->
+<!--     kable(format = "html", escape = FALSE, align = "l", -->
+<!--           col.names =c("Site","LOC_NAME Reflected in Data","SERV_AREA_NAME Reflected in Data")) %>% -->
+<!--     kable_styling(bootstrap_options = c("striped", "condensed"), position = "center", font_size = 12, full_width = F) %>% -->
+<!--     row_spec(row = 0, background = "#b2b3b2", color = "black") %>% -->
+<!--     collapse_rows(columns = 3, valign = "top") -->
+
+<!-- ``` -->
+
+
+</br>
+
+
+<!-- ### 4. Analysis and Validation -->
+<!-- #### - Analysis Methodology -->
+<!-- + **Total Doses Administered**  -->
+<!--   * Administration data is aggregated by patient and day to normalize administered volume to total doses (MG, MCG or UNITS) -->
+<!--   * Total doses administered can be calculated using MAR_DOSE, ADMIN_AMOUNT or ADMIN_UNIT; due to inconsistent data in tracking administered doses or/and volume within and across medications and site, total doses administered are calculated using the sequence logic of ORDER_VOLUME -> ADMIN_AMOUNT -> MAR_DOSE. -->
+<!-- + **Total Volume Administered** -->
+<!--   * Concentration of each medication can be obtained from the medication name. Total administered doses calculated above  is divided by concentration to obtain total administered volume. Medications with mapped inventory items in a form of ML will result in total ML administered and those tracked in EACH will be tracked by count. -->
+<!-- + **Inventory Item Size Mapping** -->
+<!--   * *Inventory Items in ML:* For inventory items with multiple size options (e.g., different vial sizes), the size that minimizes the remaining volume ("waste") when dividing the total administered volume by is picked as the inventory item and size used for that administration. -->
+<!--   * *Inventory Items in EACH:* For inventory items in a form of EACH, the total volume administered is rounded up to whole number to obtain the total count of inventory item used for that administration.  -->
+<!-- + **Other** -->
+<!--   * Exclude administrations with "Bolus from Infusion" under Administration Reason -->
+<!--   * Administrations with "Intra-OP" under Administration Reason always use 20ml vials -->
+<!--   * ***Mixtures and Continuous Drips*** -->
+
+<!-- #### - Analysis Example I -->
+<!-- + Example Administration Data: -->
+<!--   * Patient X was administered with AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION twice on 4/1/2020 -->
+<!--   * Total doses administered (normalized): -->
+<!--   * Total volume administered: -->
+<!--   * Invetory item mapped to AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION: AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION -->
+<!--   * Inventory size optinos available: 15.0, 22.5, 30.0 ML -->
+
+<!-- <style> -->
+<!--   .superbigimage{ -->
+<!--       overflow-x:scroll; -->
+<!--       white-space: nowrap; -->
+<!--   } -->
+
+<!--   .superbigimage img{ -->
+<!--      max-width: none; -->
+<!--   } -->
+
+
+<!-- </style> -->
+
+
+<!-- <div class="superbigimage"> -->
+<!-- ```{r Analysis Example I Diagram Data, fig.width = 12, echo = FALSE, warning = FALSE, message = FALSE} -->
+
+<!-- library(DiagrammeR) -->
+
+<!-- calc_df <- normalized_data %>% filter(ORDER_MED_ID == "375529072", Admin_Date == "2020-04-01") -->
+<!-- calc_df <- calc_df[,c("PAT_ID","SAVED_TIME","ADMIN_REASON","DISPINSABLE_MED_NAME","MAR_DOSE","MAR_DOSE_UNITS", -->
+<!--                       "ADMIN_AMOUNT","ADMIN_UNIT","ORDER_VOLUME","ORDER_VOLUME_UNIT","prd_name_short","inv_unit")] -->
+
+<!-- calc_df$PAT_ID <- "Patient X" -->
+<!-- calc_df$ADMIN_AMOUNT <- "NA" -->
+<!-- calc_df$ADMIN_UNIT <- "NA" -->
+<!-- calc_df$ORDER_VOLUME <- "NA" -->
+<!-- calc_df$ORDER_VOLUME_UNIT <- "NA" -->
+
+<!-- calc_df %>% -->
+<!--     kable(format = "html", escape = FALSE, align = "l", -->
+<!--           col.names =c("PAT_ID","SAVED_TIME","ADMIN_REASON","DISPINSABLE_MED_NAME","MAR_DOSE","MAR_DOSE_UNITS", -->
+<!--                       "ADMIN_AMOUNT","ADMIN_UNIT","ORDER_VOLUME","ORDER_VOLUME_UNIT","Inventory Item","Inventory Unit")) %>% -->
+<!--     kable_styling(bootstrap_options = c("striped", "condensed"), position = "center", font_size = 12, full_width = F) %>% -->
+<!--     row_spec(row = 0, background = "#d80b8c", color = "white") -->
+
+<!-- ``` -->
+<!-- </div> -->
+
+
+<!-- </br> -->
+
+
+<!-- + <span style="background-color:yellow">**Analysis Example I Calculation Flowchart**</span> -->
+<!-- <div class="superbigimage"> -->
+<!-- ```{r Analysis Example I Diagram, fig.width = 15, fig.height = 2, echo = FALSE, warning = FALSE, message = FALSE} -->
+
+<!-- # Calculation Flowchart -->
+<!-- DiagrammeR::grViz("digraph with_title { -->
+
+<!-- graph [layout = dot, rankdir = LR, fontsize = 14] -->
+
+<!-- # define the global styles of the nodes. We can override these in box if we wish -->
+<!-- node [shape = rectangle, style = filled, fillcolor = Linen] -->
+
+<!-- data1 [label = 'Import \n COVID Surge \n Admin Report', shape = cylinder, fillcolor = LightPink, fontname = Helvetica] -->
+<!-- process1 [label =  'Calculate \n total doses \n administered \n on 4/1/2020: 208 MG', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process2 [label =  'Convert total doses \n to volume: \n 208 MG / (200 MG / 5 ML) \n = 5.2 ML', fillcolor = Lavender, fontname = Helvetica, fontname = Helvetica] -->
+<!-- data2 [label = 'Import COVID Surge Med \n WINV Balance Report - \n identify sizes available: \n 15.0, 22.5, 30.0 ML', shape = cylinder, fillcolor = LightPink, fontname = Helvetica] -->
+<!-- process3 [label =  'Calculate potential waste: \n (1) 15.0-5.2 ML = 9.8 ML \n (2) 22.5-5.2 ML = 17.3 ML \n (3) 30.0-5.2 ML = 24.8 ML', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process4 [label =  'Select inventory size \n 15.0 ML \n as it results in \n minimal waste', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process5 [label =  'Calculate total count of \n 15.0 ML \n inventory used: 1', fillcolor = Lavender, fontname = Helvetica] -->
+
+<!-- # edge definitions with the node IDs -->
+<!-- {data1} -> process1 -> process2 -> {data2} -> process3 -> process4 -> process5 -->
+<!-- }") -->
+
+
+<!-- ``` -->
+</div>
+  
+
+</br>
+
+
+<!-- #### - Analysis Example II -->
+<!-- +  **Example Administration Data:** -->
+<!--   * Patient X was administered with AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION twice on 4/1/2020 -->
+<!--   * Total doses administered (normalized): -->
+<!--   * Total volume administered: -->
+<!--   * Invetory item mapped to AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION: AZITHROMYCIN 200 MG/5 ML ORAL SUSPENSION -->
+<!--   * Inventory size optinos available: 15.0, 22.5, 30.0 ML -->
+
+<!-- <div class="superbigimage"> -->
+<!-- ```{r Analysis Example II Diagram Data, fig.width = 12, echo = FALSE, warning = FALSE, message = FALSE} -->
+
+<!-- library(DiagrammeR) -->
+
+<!-- calc_df <- normalized_data %>% filter(ORDER_MED_ID == "375529072", Admin_Date == "2020-04-01") -->
+<!-- calc_df <- calc_df[,c("PAT_ID","SAVED_TIME","ADMIN_REASON","DISPINSABLE_MED_NAME","MAR_DOSE","MAR_DOSE_UNITS", -->
+<!--                       "ADMIN_AMOUNT","ADMIN_UNIT","ORDER_VOLUME","ORDER_VOLUME_UNIT","prd_name_short","inv_unit")] -->
+
+<!-- calc_df$PAT_ID <- "Patient X" -->
+<!-- calc_df$ADMIN_AMOUNT <- "NA" -->
+<!-- calc_df$ADMIN_UNIT <- "NA" -->
+<!-- calc_df$ORDER_VOLUME <- "NA" -->
+<!-- calc_df$ORDER_VOLUME_UNIT <- "NA" -->
+
+<!-- calc_df %>% -->
+<!--     kable(format = "html", escape = FALSE, align = "l", -->
+<!--           col.names =c("PAT_ID","SAVED_TIME","ADMIN_REASON","DISPINSABLE_MED_NAME","MAR_DOSE","MAR_DOSE_UNITS", -->
+<!--                       "ADMIN_AMOUNT","ADMIN_UNIT","ORDER_VOLUME","ORDER_VOLUME_UNIT","Inventory Item","Inventory Unit")) %>% -->
+<!--     kable_styling(bootstrap_options = c("striped", "condensed"), position = "center", font_size = 12, full_width = F) %>% -->
+<!--     row_spec(row = 0, background = "#d80b8c", color = "white") -->
+
+<!-- ``` -->
+<!-- </div> -->
+
+
+<!-- </br> -->
+
+
+<!-- + **Analysis Example I Calculation Flowchart** -->
+<!-- <div class="superbigimage"> -->
+<!-- ```{r Analysis Example II Diagram, fig.width = 15, fig.height = 2, echo = FALSE, warning = FALSE, message = FALSE} -->
+
+<!-- # Calculation Flowchart -->
+<!-- DiagrammeR::grViz("digraph with_title { -->
+
+<!-- graph [layout = dot, rankdir = LR, fontsize = 14] -->
+
+<!-- # define the global styles of the nodes. We can override these in box if we wish -->
+<!-- node [shape = rectangle, style = filled, fillcolor = Linen] -->
+
+<!-- data1 [label = 'Import \n COVID Surge \n Admin Report', shape = cylinder, fillcolor = LightPink, fontname = Helvetica] -->
+<!-- process1 [label =  'Calculate \n total doses \n administered \n on 4/1/2020: 208 MG', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process2 [label =  'Convert total doses \n to volume: \n 208 MG / (200 MG / 5 ML) \n = 5.2 ML', fillcolor = Lavender, fontname = Helvetica, fontname = Helvetica] -->
+<!-- data2 [label = 'Import COVID Surge Med \n WINV Balance Report - \n identify sizes available: \n 15.0, 22.5, 30.0 ML', shape = cylinder, fillcolor = LightPink, fontname = Helvetica] -->
+<!-- process3 [label =  'Calculate potential waste: \n (1) 15.0-5.2 ML = 9.8 ML \n (2) 22.5-5.2 ML = 17.3 ML \n (3) 30.0-5.2 ML = 24.8 ML', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process4 [label =  'Select inventory size \n 15.0 ML \n as it results in \n minimal waste', fillcolor = Lavender, fontname = Helvetica] -->
+<!-- process5 [label =  'Calculate total count of \n 15.0 ML \n inventory used: 1', fillcolor = Lavender, fontname = Helvetica] -->
+
+<!-- # edge definitions with the node IDs -->
+<!-- {data1} -> process1 -> process2 -> {data2} -> process3 -> process4 -> process5 -->
+<!-- }") -->
+
+
+<!-- ``` -->
+<!-- </div>  -->
+
+
 
 
 
