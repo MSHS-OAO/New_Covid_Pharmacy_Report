@@ -385,6 +385,7 @@ save_output <- paste0(getwd(), "\\Daily Reporting Output")
 rmarkdown::render("New-COVID-Surge-Meds-Report-Rmarkdown-2021-10-05.Rmd", output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
 
 
+
 #--------------Render TOCI Report -----
 
 inventory_data <- inv_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
@@ -395,9 +396,3 @@ setwd("C:\\Users\\aghaer01\\Downloads\\Code")
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
 rmarkdown::render("New-COVID-Surge-Meds-TOCI_Report-Rmarkdown-2021-10-05.Rmd", output_file = paste("MSHS Pharmacy Inventory Report_TOCI-", Sys.Date()), output_dir = save_output)
 
-
-
-
-
-inventory_data <- inv_repo  %>% filter(MedGroup !="TOCILIZUMAB")
-admin_aggregated <- med_repo %>% filter(MedGroup !="TOCILIZUMAB")
