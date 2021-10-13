@@ -1,0 +1,726 @@
+---
+author: "HSO"
+date: "5/27/2020"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: true
+    fig_width: 7
+    fig_height: 6
+---
+
+```{r Install and load packages, echo = FALSE, warning = FALSE, message = FALSE, results='hide'}
+# Code for analyzing and summarizing unit level census and COVID-19 census data ----------------------
+
+#Install and load necessary packages --------------------
+#install.packages("readraw_dfl")
+#install.packages("writeraw_dfl")
+#install.packages("ggplot2")
+#install.packages("lubridate")
+#install.packages("dplyr")
+#install.packages("reshape2")
+#install.packages("svDialogs")
+#install.packages("stringr")
+#install.packages("formattable")
+# install.packages("ggpubr")
+# install.packages("tidyr")
+#install.packages("pandoc")
+
+#Analysis for weekend discharge tracking
+library(readxl)
+library(writexl)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(zoo)
+library(reshape2)
+library(svDialogs)
+library(stringr)
+library(formattable)
+library(scales)
+library(ggpubr)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(grid)
+library(gridExtra)
+library(ggpubr)
+library(tcltk)
+library(data.table)
+library(tidyverse)
+library(plotly)
+#library(pandoc)
+# library(tidyr)
+```
+
+<style type="text/css">
+div.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+```{r report time, echo = FALSE, warning = FALSE, message = FALSE}
+
+today_date <- Sys.Date() - 1
+report_run_date <- Sys.Date()
+admin_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+admin_repo_end_date <- today_date
+inv_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+inv_repo_end_date <- today_date
+
+```
+
+
+
+
+```{r Graph asthetics, echo = FALSE, warning = FALSE, message = FALSE}
+### Color Functions for GraphS 
+
+# Mount Sinai corporate colors "USE THIS TO ADD COLORS"
+MountSinai_colors <- c(
+  `dark purple`  = "#212070",
+  `dark pink`    = "#d80b8c",
+  `dark blue`    = "#00aeef",
+  `dark grey`    = "#7f7f7f",
+  `yellow`       = "#ffc000",
+  `purple`       = "#7030a0",
+  `med purple`   = "#5753d0",
+  `med pink`     = "#f75dbe",
+  `med blue`     = "#5cd3ff",
+  `med grey`     = "#a5a7a5",
+  `light purple` = "#c7c6ef",
+  `light pink`   = "#fcc9e9",
+  `light blue`   = "#c9f0ff",
+  `light grey`   = "#dddedd"
+  )
+
+# Function to extract Mount Sinai colors as hex codes
+# Use Character names of MountSinai_colors
+
+MountSinai_cols <- function(...) {
+  cols <- c(...)
+  
+  if (is.null(cols))
+    return (MountSinai_colors)
+  
+  MountSinai_colors[cols]
+}
+
+# Color Function that can be used to call all colors is "MountSinai_cols()"
+# Use in ggplot 
+
+  #MountSinai_cols()       # will provide all colors and their hex codes in a table 
+  #MountSinai_cols("pink") # will provide color name and the hex code for the pink color
+
+# Create palettes 
+MountSinai_palettes <- list(
+  `all`   = MountSinai_cols("dark purple","dark pink","dark blue","dark grey",
+                            "med purple","med pink","med blue","med grey", 
+                            "light purple","light pink","light blue","light grey"),
+  
+  `main`  = MountSinai_cols("dark purple","dark pink","dark blue","dark grey"),
+  
+  `purple`  = MountSinai_cols("dark purple","med purple","light purple"),
+  
+  `pink`  = MountSinai_cols("dark pink","med pink","light pink"),
+  
+  `blue`  = MountSinai_cols("dark blue", "med blue", "light blue"),
+  
+  `grey`  = MountSinai_cols("dark grey", "med grey", "light grey"),
+  
+  `purpleGrey` = MountSinai_cols("dark purple", "dark grey"),
+  
+  `pinkBlue` = MountSinai_cols("dark pink", "dark blue")
+  
+)
+
+# MountSinai_palettes
+# Return function to interpolate a Mount Sinai color palette
+# default value is the main palette, reverse = True will change the order
+
+MountSinai_pal <- function(palette = "all", reverse = FALSE, ...) {
+  pal <- MountSinai_palettes[[palette]]
+  
+  if (reverse) pal <- rev(pal)
+  
+  colorRampPalette(pal, ...)
+}
+
+
+
+# Scale Function for ggplot can be used instead of scale_color_manual
+scale_color_MountSinai <- function(palette = "all", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- MountSinai_pal(palette = palette, reverse = reverse)
+  
+  if (discrete) {
+    discrete_scale("colour", paste0("MountSinai_", palette), palette = pal, ...)
+  } else {
+    scale_color_gradientn(colours = pal(256), ...)
+  }
+}
+
+# Scale Fill for ggplot insetead of scale_fill_manual 
+scale_fill_MountSinai <- function(palette = "all", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- MountSinai_pal(palette = palette, reverse = reverse)
+
+  if (discrete) {
+    discrete_scale("fill", paste0("MountSinai_", palette), palette = pal, ...)
+  } else {
+    scale_fill_gradientn(colours = pal(256), ...)
+  }
+}
+
+# Use in ggplot 
+  # scale_color_MountSinai("main")
+
+```
+ 
+
+
+```{r Map admin and inventory data using ndc, echo = FALSE, warning = FALSE, message = FALSE}
+
+#inventory_data <- inv_final_repo %>% filter(MedGroup !="TOCILIZUMAB")
+#admin_aggregated <- med_final_repo  %>% filter(MedGroup !="TOCILIZUMAB")
+
+# Pull in inventory unit
+admin_aggregated$PRD_NAME <- inventory_data$PRD_NAME[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcDoseSize_inv <- inventory_data$ConcDoseSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcDoseUnit_inv <- as.character(inventory_data$ConcDoseUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)])
+admin_aggregated$ConcVolSize_inv <- inventory_data$ConcVolSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$ConcVolUnit_inv <- inventory_data$ConcVolUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$NormDoseSize_inv <- inventory_data$NormDoseSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$NormDoseUnit_inv <- inventory_data$NormDoseUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$inv_size <- inventory_data$InvSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
+admin_aggregated$inv_unit <- toupper(inventory_data$InvUnit[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)])
+admin_aggregated$TotalDosesPerInv <- admin_aggregated$NormDoseSize_inv*admin_aggregated$inv_size
+
+admin_aggregated$NormDoseUnit_inv[which(admin_aggregated$NormDoseUnit_inv == "UNIT/ML")] <- "UNITS/ML" 
+admin_aggregated$ConcDoseUnit_inv[which(admin_aggregated$ConcDoseUnit_inv == "UNIT")] <- "UNITS"
+
+# Filter out administrations wihtout inventory mapping by ndc id
+#meds_wo_inv_mapping <- admin_aggregated %>% filter(is.na(inv_unit))
+# nrow(meds_wo_inv_mapping) #5606 administrations without inv mapping
+
+admin_aggregated <- admin_aggregated %>% filter(!is.na(inv_unit))
+# write_xlsx(admin_aggregated, "Admin Pre-processed Data.xlsx")
+
+```
+
+
+```{r Calculate total inventory used in count, echo = FALSE, warning = FALSE, message = FALSE}
+
+admin_inv_used <- admin_aggregated
+
+units <- admin_inv_used %>% group_by(inv_unit, total_doses_unit, ConcDoseUnit_inv) %>% summarise(count = n())
+
+# ML inventory used --------------------------------------- Based on same inventory NOT shared across multiple administrations
+admin_inv_used_ml <- admin_inv_used %>%
+  filter(inv_unit == "ML") %>%
+  mutate(total_inv_used = ifelse(total_doses_unit == ConcDoseUnit_inv, ceiling(total_doses/TotalDosesPerInv),NA))
+
+### Manual calculation of total inventory used 
+admin_inv_used_ml <- admin_inv_used_ml %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & ADMIN_REASON == "New Bag", 1, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & !is.na(ADMIN_AMOUNT), ceiling(ADMIN_AMOUNT/inv_size), total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used), 1, total_inv_used)) # of 152889 administration 34 with continuous drips & 10 without mar/admin/order vol
+
+
+## Aggregate total inventory used by patient and date
+admin_ml_aggregated <- admin_inv_used_ml %>%
+  group_by(loc_rollup, Admin_Date, PAT_ID, PRD_NAME, inv_size, inv_unit) %>%
+  summarise(total_inv_used = sum(total_inv_used)) %>%
+  mutate(total_inv_count = ceiling(total_inv_used/inv_size))
+
+
+# EACH inventory used ------------------------------------- Based on same inventory shared across multiple administrations
+admin_inv_used$total_doses_unit[which(admin_inv_used$total_doses_unit == "")] <- NA
+
+admin_inv_used_each <- admin_inv_used %>%
+  filter(inv_unit == "EACH") %>%
+  mutate(total_inv_used = ceiling(ifelse(is.na(total_doses_unit), ADMIN_AMOUNT,
+                                         ifelse(total_doses_unit == ConcDoseUnit_inv, total_doses/TotalDosesPerInv, NA))))
+  
+  
+### Manual mapping of concentration: DISPINSABLE_MED_NAME | PRD_NAME (inventory concentration)
+### 1. ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS | ALTEPLASE 50 MG INTRAVENOUS SOLUTION (50mg/50ml)
+### 2. AZITHROMYCIN 500 MG IVPB PYXIS MINIBAG | AZITHROMYCIN 500 MG INTRAVENOUS SOLUTION (500mg/250ml)
+### 3. remdesivir 100 mg intravenous (solution) and remdesivir 100 mg intravenous (powder) (100mg/20ml)
+
+admin_inv_used_each <- admin_inv_used_each %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & DISPINSABLE_MED_NAME == "ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS",
+                                 ORDER_VOLUME/50, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & DISPINSABLE_MED_NAME == "AZITHROMYCIN 500 MG IVPB PYXIS MINIBAG",
+                                 ORDER_VOLUME/250, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & PRD_NAME == "remdesivir 100 mg intravenous (solution)",
+                                 ORDER_VOLUME/20, total_inv_used)) %>%
+  mutate(total_inv_used = ifelse(is.na(total_inv_used) & PRD_NAME == "remdesivir 100 mg intravenous (powder)",
+                                 ORDER_VOLUME/20, total_inv_used))
+
+## Aggregate total inventory used by patient and date
+admin_each_aggregated <- admin_inv_used_each %>%
+  group_by(loc_rollup, Admin_Date, PAT_ID, PRD_NAME, inv_size, inv_unit) %>%
+  summarise(total_inv_used = sum(total_inv_used)) %>%
+  mutate(total_inv_count = ceiling(total_inv_used))
+  
+
+# ***NOT shared across administrations = 41728 vs. Shared across administrations = 41214*** 
+
+# Merge ML and EACH datasets
+inv_used_merged <- rbind(admin_ml_aggregated, admin_each_aggregated)
+
+inv_used_site <- inv_used_merged %>%
+  group_by(loc_rollup, Admin_Date, PRD_NAME) %>%
+  summarise(total_inv_used = sum(total_inv_count))
+
+```
+
+
+```{r Inventory Data Pre-processing, echo = FALSE, warning = FALSE, message = FALSE}
+
+inv_balance <- inventory_data %>%
+  group_by(ReportDate, Site, MedGroup, InvShortName, InvSizeUnit, PRD_NAME) %>%
+  summarise(total_balance = round(sum(Balance), 0))
+  
+  inv_balance <- merge(inv_balance, inv_used_site, by.x = c("ReportDate","Site","PRD_NAME"), 
+                       by.y = c("Admin_Date","loc_rollup","PRD_NAME"), all.x = TRUE)
+  
+  # Format inv_balance to include all missing dates
+  inv_unique <- as.data.frame(unique(inv_balance[,c("Site","MedGroup","InvShortName","PRD_NAME","InvSizeUnit")]))
+  n <- length(seq(min(inv_balance$ReportDate), max(inv_balance$ReportDate), by = "1 day"))
+  inv_bal_df <- do.call("rbind", replicate(n, inv_unique, simplify = FALSE))
+  dates <- data.frame(ReportDate = rep(seq(min(inv_balance$ReportDate), max(inv_balance$ReportDate), by = "1 day"),
+                                                each=nrow(inv_unique)))
+  inv_bal_df <- cbind(inv_bal_df, dates)
+  inv_bal_df <- inv_bal_df %>% mutate(uniqueId = paste0(ReportDate,Site,PRD_NAME))
+  
+  inv_balance <- inv_balance %>%  mutate(uniqueId = paste0(ReportDate,Site,PRD_NAME))
+  inv_used_site <- inv_used_site %>%  mutate(uniqueId = paste0(Admin_Date,loc_rollup,PRD_NAME))
+
+  inv_bal_df$total_balance <- inv_balance$total_balance[match(inv_bal_df$uniqueId, inv_balance$uniqueId)]
+  inv_bal_df$total_inv_used <-inv_used_site$total_inv_used[match(inv_bal_df$uniqueId, inv_used_site$uniqueId)]
+  
+  inv_bal_df[is.na(inv_bal_df)] <- 0 
+  
+  # Filter our sites
+  inv_bal_df <- inv_bal_df %>% filter(Site %in% c("MSB","MSBI","MSH","MSHS Stockpile","MSM","MSQ","MSW"))
+  
+
+```
+
+
+```{r Sinai Logo, echo=FALSE, out.width = '30%'}
+knitr::include_graphics("Mount_Sinai_Logo_H.png")
+```
+
+# MSHS Pharmacy Inventory Dashboard
+## HCMLU
+*Report Run Date: `r report_run_date`*<br/>
+*Administration Data Date Range: `r admin_repo_start_date` to `r admin_repo_end_date`*<br/>
+*Inventory Balance Data Date Range: `r inv_repo_start_date` to `r inv_repo_end_date`*<br/>
+___________________________________________________________________________________________________________
+
+```{r Summary of All Medications Function, fig.height=7, echo = FALSE, warning = FALSE, message = FALSE}
+
+
+all_meds_usage_balance_tb <- function(site) {
+
+  site_name <- site
+  
+   # site_name <- c("MSH")
+   # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  
+  # sites <- unique(inv_bal_df$Site)
+  # sites <- as.vector(sites)
+  # 
+  
+  total_days <- length(unique(inv_bal_df$ReportDate))
+  
+  # Last 30-day Usage Calculations
+  usage_rate <- inv_bal_df %>%
+    filter(Site %in% site_name, ReportDate >= max(inv_bal_df$ReportDate) - 29) %>%
+    group_by(MedGroup, PRD_NAME, InvSizeUnit) %>%
+    summarise(last30_avg = round(sum(total_inv_used)/30,0))
+  
+  # Average last 3 day usage
+  last3_avg <- inv_bal_df %>%
+    filter(Site %in% site_name, ReportDate >= max(inv_bal_df$ReportDate) - 2) %>%
+    group_by(MedGroup, PRD_NAME, InvSizeUnit) %>%
+    summarise(last3_avg = round(sum(total_inv_used)/3,0))
+  
+  usage_rate$last3_avg <- last3_avg$last3_avg[match(usage_rate$PRD_NAME, last3_avg$PRD_NAME)]
+
+  # Inventory Balance Pull
+  todays_inv <- inv_bal_df %>%
+    filter(Site %in% site_name) %>%
+    filter(ReportDate == max(inv_bal_df$ReportDate)) %>%
+    group_by(PRD_NAME) %>%
+    summarise(Balance = sum(total_balance))
+
+  usage_rate$todays_inv_bal <- todays_inv$Balance[match(usage_rate$PRD_NAME, todays_inv$PRD_NAME)]
+
+  days_on_hand_tb <- usage_rate %>%
+    mutate(daysOnHand_last30 = round(todays_inv_bal/last30_avg, 0),
+           daysOnHand_last3 = round(todays_inv_bal/last3_avg, 0)) %>%
+    arrange(MedGroup, PRD_NAME)
+  
+  days_on_hand_tb$daysOnHand_last3[is.nan(days_on_hand_tb$daysOnHand_last3)] <- 0
+  days_on_hand_tb$daysOnHand_last30[is.nan(days_on_hand_tb$daysOnHand_last30)] <- 0
+  
+  # days_on_hand_tb$last30_avg <- prettyNum(days_on_hand_tb$last30_avg, big.mark = ',') 
+  # days_on_hand_tb$last3_avg <- prettyNum(days_on_hand_tb$last3_avg, big.mark = ',') 
+  # days_on_hand_tb$daysOnHand_last30 <- prettyNum(days_on_hand_tb$daysOnHand_last30, big.mark = ',') 
+  # days_on_hand_tb$daysOnHand_last3 <- prettyNum(days_on_hand_tb$daysOnHand_last3, big.mark = ',') 
+
+  
+  days_on_hand_tb %>%
+    mutate(daysOnHand_last30 = ifelse(daysOnHand_last30 > 30,
+                    cell_spec(daysOnHand_last30, background= "green", color = "white", bold = T),
+                    cell_spec(daysOnHand_last30, background = "red", color = "white", bold = T)),
+           daysOnHand_last3 = ifelse(daysOnHand_last3 > 30,
+                    cell_spec(daysOnHand_last3, background= "green", color = "white", bold = T),
+                    cell_spec(daysOnHand_last3, background = "red", color = "white", bold = T))) %>%
+    kable(format = "html", escape = FALSE, align = "l",
+          col.names = c("Medication", "Inventory Name", "Size",  
+                       "Avg Daily Usage <br> (Last 30 Days)", "Avg Daily Usage <br> (Last 3 Days)",
+                       "Today's Inventory Balance", "Days on Hand <br> (Last 30 Days)", "Days on Hand <br> (Last 3 Days)")) %>%
+    kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                  position = "center", font_size = 12, full_width = F) %>%
+    row_spec(row = 0, background = "#221f72", color = "white") %>%
+    add_header_above(c("Inventory Usage and Days on Hand" = length(days_on_hand_tb)),
+                       background = "#221f72", color = "white", font_size = 16, align = "center") %>%
+    collapse_rows(columns = 1, valign = "top") %>%
+    column_spec(2, width = "5cm") %>%
+  # column_spec(5:6, width = "1.5cm") %>%
+    footnote(number = c("'Inf' indicates no inventory usage in a gievn time period.",
+                        "'Red' indicates Days on Hand < 30; 'Green' indicates Days on Hand >= 30.")) %>%
+    scroll_box(height = "500px") 
+
+}
+
+```
+
+
+```{r Last 3 Days Inventory Balance and Usage Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+inv_last3_graph <- function(site, medication) {
+
+  site_name <- site
+  med_name <- medication
+# 
+#    site_name <- c("MSH","MSQ","MSB","MSBI","MSW")
+#    med_name <- "ELVITEG"
+
+  # Inventory Balance in Last 3 Days
+  inv_bal_last3 <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name, ReportDate >= max(inventory_data$ReportDate) -2) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+    site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+
+    if (nrow(inv_bal_last3) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {  
+  
+  max <- inv_bal_last3 %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_balance))
+
+  inv_bal_last3_graph <-
+    ggplot(inv_bal_last3, aes(x=ReportDate, y=total_inv_balance, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    ggtitle(label=paste0("\n",site," ",medication, ": Inventory Balance \nin Last 3 Days by Inventory Item"))+
+    labs(x=NULL, y=NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_bal_last3$inv_new_name))/
+                                    min(length(unique(inv_bal_last3$inv_new_name)),5)))+
+    theme_bw()+
+    theme(plot.title = element_text(size = 18, hjust = 0.5), legend.position = "bottom", legend.box = "vertical",
+          legend.title = element_blank(), legend.text = element_text(size = 10),
+          axis.text.x = element_text(size = 12, angle = 0, hjust = 0.5),
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey"))+
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max$total) < 1000, "",
+                    ifelse(max(max$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max$total) < 1000, 1,
+                    ifelse(max(max$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max$total)*1.2))+
+    scale_x_date(breaks = "day", date_labels = "%Y-%m-%d, \n%A") +
+    geom_text(aes(label=ifelse(total_inv_balance == 0,"",prettyNum(total_inv_balance, big.mark = ','))), color="white",
+              size=4, position = position_stack(vjust = 0.5))+
+    stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+                 geom="text", color="black", fontface="bold", size=4)
+
+ 
+  # Daily Usage in Last 3 Days
+  max_usage <- inv_bal_last3 %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_count_used))
+
+  inv_usage_last3_graph <-
+    ggplot(inv_bal_last3, aes(x=ReportDate, y=total_inv_count_used, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    ggtitle(label=paste0("\n",site," ",medication, ": Inventory Usage \nin Last 3 Days by Inventory Item"))+
+    labs(x=NULL, y=NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_bal_last3$PRD_NAME))/
+                                    min(length(unique(inv_bal_last3$PRD_NAME)),5)))+
+    theme_bw()+
+    theme(plot.title = element_text(size = 18, hjust = 0.5), legend.position = "bottom", legend.box = "vertical",
+          legend.title = element_blank(), legend.text = element_text(size = 10),
+          axis.text.x = element_text(size = 12, angle = 0, hjust = 0.5),
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey"))+
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_usage$total) < 1000, "",
+                    ifelse(max(max_usage$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_usage$total) < 1000, 1,
+                    ifelse(max(max_usage$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_usage$total)*1.2))+
+    scale_x_date(breaks = "day", date_labels = "%Y-%m-%d, \n%A") +
+    geom_text(aes(label=ifelse(total_inv_count_used == 0,"",prettyNum(total_inv_count_used, big.mark = ','))), color="white",
+              size=4, position = position_stack(vjust = 0.5))+
+    stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+                 geom="text", color="black", fontface="bold", size=4)
+  
+
+grid.draw(ggarrange(inv_usage_last3_graph, inv_bal_last3_graph, ncol=2, nrow=1, common.legend = TRUE, legend="bottom"))
+
+}
+}
+
+```
+
+
+
+```{r Total Inventory Used Graph Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Inventory Used and Remaining Graph
+inventory_used_graph <- function(site, medication) {
+  
+  site_name <- site
+  med_name <- medication
+
+  # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  # med_name <- "HEPARIN"
+
+  # Inventory Balance 
+  inv_df <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+
+    if (nrow(inv_df) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {
+  
+  max <- inv_df %>% group_by(ReportDate, PRD_NAME) %>% summarise(total = sum(total_inv_count_used))
+  max_unit <- inv_df %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_count_used))
+  site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+  
+  inv_used_graph <- 
+    ggplot(inv_df, aes(x=ReportDate, y=total_inv_count_used, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    #scale_fill_manual(values=MountSinai_pal("main")(length(unique(inv_df$prd_name))), labels = wrap_format(25)) +
+    labs(title = paste0("\n",site," ",medication,": Total Inventory Used"), x = NULL, y = NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
+                                     min(length(unique(inv_df$PRD_NAME)),5)))+
+     theme_bw() +
+     theme(plot.title = element_text(size = 18, hjust = 0.5), 
+          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+          plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
+          axis.title.y=element_text(size=12,face="bold"),
+          axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey")) +
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_unit$total) < 1000, "",
+                    ifelse(max(max_unit$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_unit$total) < 1000, 1,
+                    ifelse(max(max_unit$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_unit$total)*1.2))+
+      scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+    #  geom_text(aes(label=ifelse(total_inv_count_used == 0,"",total_inv_count_used)), color="white",
+    #           size=2, position = position_stack(vjust = 0.5))+
+    # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
+    #              geom="text", color="black", fontface="bold", size=2)
+  
+    print(inv_used_graph)
+  
+    }
+}
+
+```
+
+
+```{r Total Inventory Remaining Graph Function, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Inventory Used and Remaining Graph
+inventory_remaining_graph <- function(site, medication) {
+  
+  site_name <- site
+  med_name <- medication
+
+  # site_name <- c("MSB","MSH","MSM","MSQ","MSW")
+  # med_name <- "HEPARIN"
+
+  # Inventory Balance 
+  inv_df <- inv_bal_df %>%
+    filter(Site %in% site_name, MedGroup == med_name) %>%
+    group_by(MedGroup, ReportDate, PRD_NAME) %>%
+    summarise(total_inv_count_used = round(sum(total_inv_used)),
+              total_inv_balance = round(sum(total_balance),0))
+  
+
+    if (nrow(inv_df) == 0){
+
+    print (paste0("No Inventory Usage and Balance of ",med_name, " at ", site_name))
+
+    } else {
+  
+  max <- inv_df %>% group_by(ReportDate, PRD_NAME) %>% summarise(total = sum(total_inv_balance))
+  max_unit <- inv_df %>% group_by(ReportDate) %>% summarise(total = sum(total_inv_balance))
+  site <- ifelse(all(site_name == unique(inv_bal_df$Site)),"MSHS",site_name)
+  
+  inv_used_graph <- 
+    ggplot(inv_df, aes(x=ReportDate, y=total_inv_balance, fill=PRD_NAME)) +
+    geom_bar(position="stack",stat="identity", width=0.7) +
+    scale_fill_MountSinai("main",reverse = TRUE, labels = wrap_format(28))+
+    #scale_fill_manual(values=MountSinai_pal("main")(length(unique(inv_df$prd_name))), labels = wrap_format(25)) +
+    labs(title = paste0("\n",site," ",medication,": Total Inventory Balance"), x = NULL, y = NULL)+
+    guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
+                                     min(length(unique(inv_df$PRD_NAME)),5)))+
+     theme_bw() +
+     theme(plot.title = element_text(size = 18, hjust = 0.5), 
+          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+          plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
+          axis.title.y=element_text(size=12,face="bold"),
+          axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
+          axis.text.y = element_text(size = 12),
+          panel.grid.major = element_line(color = "lightgrey"),
+          panel.grid.minor = element_line(color = "lightgrey")) +
+    scale_y_continuous(labels = scales::unit_format(
+      unit = ifelse(max(max_unit$total) < 1000, "",
+                    ifelse(max(max_unit$total) < 1000000, "K", "M")),
+      scale = ifelse(max(max_unit$total) < 1000, 1,
+                    ifelse(max(max_unit$total) < 1000000, 1e-3, 1e-6)),
+      accuracy = 0.1),
+      limits = c(0, max(max_unit$total)*1.2))+
+      scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+    #  geom_text(aes(label=ifelse(total_inv_balance== 0,"",total_inv_balance)), color="white",
+    #           size=2, position = position_stack(vjust = 0.5))+
+    # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y..,big.mark = ',')), group = ReportDate),
+    #              geom="text", color="black", fontface="bold", size=2)
+  
+    print(inv_used_graph)
+  
+    }
+}
+
+```
+
+
+
+```{r MSHS Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  
+  sites <- unique(inv_bal_df$Site)
+  sites <- as.vector(sites)
+  
+  # sites <- c("MSB","MSH","MSM","MSQ","MSW")
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(" \n##","MSHS\n")
+  cat(" \n### All Medications", "\n")
+  
+  all_meds_usage_balance_tb(sites)
+  
+  #print(all_meds_usage_balance_tb(sites))
+
+  cat(" \n")
+
+  for(j in meds) {
+
+    cat(" \n###", j, "\n")
+    
+    inv_last3_graph(sites, medication = j)
+    inventory_used_graph(sites, medication = j)
+    inventory_remaining_graph(sites, medication = j)
+
+    cat(" \n")
+  }
+
+
+```
+
+
+```{r Site Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+# sites <- unique(inv_bal_df$Site)
+# sites <- as.vector(sites)
+
+sites <- c("MSB","MSBI","MSH","MSM","MSQ","MSW")
+
+
+for (i in sites) {
+
+  cat(" \n##", i,"\n")
+  cat(" \n### All Medications", "\n")
+  
+  
+  cat(all_meds_usage_balance_tb(site = i))
+  #print(all_meds_usage_balance_tb(site = "MSH"))
+
+  cat(" \n")
+
+  meds <- inv_bal_df %>% filter(Site == i) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    cat(" \n###", j, "\n")
+    
+    inv_last3_graph(site = i, medication = j)
+    inventory_used_graph(site = i, medication = j)
+    inventory_remaining_graph(site = i, medication = j)
+    cat(" \n")
+
+  }
+ }
+
+```
+
+
+</br>
+
+
+## *About This Report
+### 1. Data Reports
++ **COVID Surge Med Admin Report** includes patient-level medication administration data; created in EPIC Clarity and updated every midnight.
++ **COVID Surge Med WINV Balance Report** includes inventory balances; pulled from EPIC Willow Inventory every morning at 9:34 AM. 
+
+### 2. ERX and PRD Mapping
++ ERX and PRD mapping was done based on NDC ID. For ERXs missing NDC IDs, most commonly used PRD for the respective ERX at each site was used. 
+<!-- + Below table summarizes the list of medications and their mapped inventory items included in this dashboard by each MSHS site. All inventory items are tracked in count, in a form of either ML (e.g., vials) or EACH (e.g., tablets). The inclusion criteria and mapping were provided by the MSHS Pharmacy team.   -->
+
+
+</br>
