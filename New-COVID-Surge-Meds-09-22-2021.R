@@ -45,9 +45,8 @@ max(inv_repo$ReportDate)
 # Change the date format
 inv_repo <- inv_repo %>% mutate(ReportDate = as.Date(ReportDate))
 
-
 # Import COVID Surge Med WINV data
-inv_list <- file.info(list.files(path= paste0(wrk.dir,"/Med Inventory - Phase2"), full.names=TRUE, 
+inv_list <- file.info(list.files(path= paste0(wrk.dir,"/New Inventory"), full.names=TRUE, 
                                  pattern = paste0("COVID Surge Med WINV Balance_", dates_pattern, collapse = "|")))
 inv_list = inv_list[with(inv_list, order(as.POSIXct(ctime), decreasing = TRUE)), ]
 
@@ -55,8 +54,7 @@ dif_time= difftime(max(inv_repo$ReportDate), Sys.Date()-1)
 count = gsub('.*-([0-9]+).*','\\1', dif_time )
 
 files = rownames(inv_list)[1:count]
-new_inventory_raw <- lapply(files, function(filename){
-  read_excel(filename, col_names = TRUE, na = c("", "NA"))})
+new_inventory_raw <- lapply(files, function(filename){read_excel(filename, col_names = TRUE, na = c("", "NA"))})
 
 #Add Date Column
 new_inventory_raw <- lapply(new_inventory_raw,transform, UpdateDate = as.Date(LAST_UPDATE_TIME,  format = "%d-%b-%y"))
@@ -66,13 +64,16 @@ new_inventory_raw <- lapply(new_inventory_raw,transform,ReportDate =  as.Date(ma
 inv_daily_df <-  do.call(rbind.data.frame,  new_inventory_raw )
 rm(inv_list, new_inventory_raw)
 
+
+## Remove BI Supply room 
+inv_daily_df <- inv_daily_df %>% filter(INV_NAME != "BI Supply room")
+
                                                                       
 # Add Site 
 inv_daily_df <- inv_daily_df %>% mutate(Site = ifelse(str_detect("MSHS COVID 19 Stockpile", INV_NAME), "MSHS Stockpile",
                                                     str_replace(str_extract(INV_NAME, "[A-Z]+(\\s|\\-)"), "\\s|\\-", "")),
                                                     Site=ifelse(Site== "BI","MSBI" , Site))
 
-  
 # Extract inventory item concentration
 
 # Pattern 1: x MCG/y ML
@@ -94,6 +95,7 @@ inv_daily_df <- inv_daily_df %>% mutate(ConcExtract = ifelse(str_detect(PRD_NAME
                                             ifelse(str_detect(PRD_NAME, conc_pattern_4), str_extract(PRD_NAME, conc_pattern_4), NA)))))
 
 
+inv_daily_df <- inv_daily_df %>% mutate(ConcExtract= str_trim(ConcExtract))
 
 # Fix concentrations with missing spaces or missing numeric values (ie, 200 MG/200ML, 10 MG/ML)
 inv_daily_df <- inv_daily_df %>%  mutate(ConcExtract = ifelse(str_detect(ConcExtract, "([0-9])(ML)"), str_replace(ConcExtract, "([0-9])(ML)", "\\1 \\2"),
@@ -105,15 +107,21 @@ inv_daily_df <- inv_daily_df %>% separate(ConcExt_split, c("ConcDoseSize", "b", 
 inv_daily_df <- inv_daily_df %>% separate(b, c( "ConcDoseUnit", "ConcVolSize"), extra = "merge", fill = "right", sep = "/")
 
 
+
 # Format concentration columns into numerics
 inv_daily_df <- inv_daily_df %>% mutate(ConcDoseSize = as.numeric(str_replace(ConcDoseSize, "\\,", "")),
                                                     ConcVolSize =as.numeric(str_replace(ConcVolSize, "\\,", "")))
 
-
 # Calculate normalize dose unit
+inv_daily_df <- inv_daily_df %>% mutate(ConcDoseUnit=replace(ConcDoseUnit, is.na(ConcDoseUnit), ""),
+                                        ConcVolUnit= replace(ConcVolUnit, is.na(ConcVolUnit),""))
+
 inv_daily_df <- inv_daily_df %>% mutate(NormDoseSize = ifelse(is.na(ConcVolSize), ConcDoseSize, ConcDoseSize / ConcVolSize),
                                                    NormDoseUnit = paste0(ConcDoseUnit,"/",ConcVolUnit))
 
+
+inv_daily_df <- inv_daily_df %>% mutate(ConcDoseUnit=ifelse(ConcDoseUnit==  "", NA, ConcDoseUnit),
+                                        ConcVolUnit= ifelse(ConcVolUnit== "", NA,ConcVolUnit ))
 
 # Strip out inventory volume and sizes from Inventory Item Name
 inv_size_pattern <- "\\,\\s[0-9]+(\\.|\\,)*[0-9]*\\s*(mL|g)"
@@ -142,6 +150,7 @@ inv_daily_df <- inv_daily_df %>% mutate(TotalDoseBalance = BALANCE * NormDoseSiz
 inv_daily_df <- inv_daily_df %>% mutate(NDC_ID_ref = NDC_ID, NDC_CODE_ref = NDC_CODE) %>%
              mutate(NDC_ID = ifelse(str_detect(NDC_ID,"-"), NDC_CODE_ref, NDC_ID_ref), NDC_CODE = ifelse(str_detect(NDC_CODE,"-"), NDC_CODE_ref, NDC_ID_ref)) %>%
              mutate(NormDoseUnit = ifelse(NormDoseUnit == "/", NA, ifelse(NormDoseUnit == "MG/", "MG", NormDoseUnit)))
+
 
 # Aggregate inventory data by site and NDC 
 inv_site_summary <- inv_daily_df  %>%
@@ -172,6 +181,7 @@ inv_site_summary <- inv_site_summary %>% filter(med_class == "COVID")
 inv_final_repo <- rbind(inv_repo, inv_site_summary)
 inv_final_repo <- unique(inv_final_repo)
 
+
 # Save the new repo
 write_xlsx(inv_final_repo, path = paste0(wrk.dir, "\\REPO\\Inv_Repo\\Covid Surge Meds Inventory Repo-", Sys.Date()-1, ".xlsx"))
 rm(inv_repo, inv_site_summary, inv_daily_df)
@@ -194,7 +204,7 @@ max(med_repo$Admin_Date)
 med_repo <- med_repo %>% mutate(Admin_Date= as.Date(Admin_Date))
 
 # Import COVID Surge Med Admin data
-new_med_admin_list <- file.info(list.files(path= paste0(wrk.dir,"/Med Admin - Phase2"), full.names=TRUE, pattern = paste0("COVID Surge Med Admin_", dates_pattern, collapse = "|")))
+new_med_admin_list <- file.info(list.files(path= paste0(wrk.dir,"/New Med Admin"), full.names=TRUE, pattern = paste0("COVID Surge Med Admin_", dates_pattern, collapse = "|")))
 new_med_admin_list = new_med_admin_list[with(new_med_admin_list, order(as.POSIXct(ctime), decreasing = TRUE)), ]
 
 
@@ -204,7 +214,6 @@ new_med_admin_raw <- lapply(files, function(filename){
 
 
 new_med_admin <-  do.call(rbind.data.frame, new_med_admin_raw )
-
 rm(new_med_admin_list, new_med_admin_raw)
 
 
@@ -275,6 +284,8 @@ covid_meds_admin <- covid_meds_admin %>%
                                                          ifelse(!is.na(str_extract(DISPINSABLE_MED_NAME, conc_pattern_6)),
                                                                 str_extract(DISPINSABLE_MED_NAME, conc_pattern_6), NA)))))))
 
+covid_meds_admin <- covid_meds_admin %>% mutate(StrExtract=str_trim(StrExtract))
+
 # Replace /ML with /1 ML
 covid_meds_admin <- covid_meds_admin %>%
   mutate(StrExtract = str_replace(StrExtract, "/ML", "/1 ML"))
@@ -298,15 +309,25 @@ covid_meds_admin <- covid_meds_admin %>% mutate(MAR_DOSE_UNITS= toupper(MAR_DOSE
                                                   ConcVolUnit = toupper(ConcVolUnit))
 
 # Format to standardize units 
-covid_meds_admin$ConcDoseUnit[which(covid_meds_admin$ConcDoseUnit == "UNIT")] <- "UNITS"
+covid_meds_admin <- covid_meds_admin %>% mutate(ConcDoseUnit=ifelse(ConcDoseUnit== "UNIT", "UNITS", ConcDoseUnit ))
+
 
 # Normalized doses 
-covid_meds_admin <- covid_meds_admin %>% 
-  mutate(NormDoseSize = ifelse(is.na(ConcVolSize), ConcDoseSize, ConcDoseSize / ConcVolSize),
+covid_meds_admin <- covid_meds_admin %>%  mutate(ConcDoseUnit=ifelse(is.na(ConcDoseUnit), "", ConcDoseUnit),
+                                                 ConcVolUnit= ifelse(is.na(ConcVolUnit), "", ConcVolUnit))
+
+
+covid_meds_admin <- covid_meds_admin %>%  mutate(NormDoseSize = ifelse(is.na(ConcVolSize), ConcDoseSize, ConcDoseSize / ConcVolSize),
          NormDoseUnit = paste0(ConcDoseUnit,"/",ConcVolUnit)) %>%
   mutate(NormDoseUnit = ifelse(NormDoseUnit == "/", NA,
                                ifelse(NormDoseUnit == "MG/", "MG", NormDoseUnit)))
+
 covid_meds_admin$NormDoseSize <- as.numeric(covid_meds_admin$NormDoseSize)
+
+covid_meds_admin <- covid_meds_admin %>%  mutate(ConcDoseUnit=ifelse(ConcDoseUnit== "",NA,  ConcDoseUnit),
+                                                 ConcVolUnit= ifelse(ConcVolUnit== "", NA,  ConcVolUnit))
+
+
 
 # Normalized concentration per ml 
 covid_meds_admin <- covid_meds_admin %>% mutate(NormConcPerMl = ifelse(ConcVolUnit == "ML", ConcDoseSize / ConcVolSize, ""))
@@ -320,13 +341,16 @@ covid_meds_admin <- covid_meds_admin %>%
                               ifelse(ADMIN_UNIT %in% c("MG","MCG","UNITS"), ADMIN_AMOUNT, 
                                      ifelse(ADMIN_UNIT == "ML" & !is.na(ConcDoseUnit), ADMIN_AMOUNT*NormConcPerMl,""))))
 
-covid_meds_admin$total_doses[is.na(covid_meds_admin$total_doses)] <- ""
+covid_meds_admin <- covid_meds_admin %>% mutate(total_doses= ifelse(is.na(total_doses), "",total_doses ))
+
 
 covid_meds_admin <- covid_meds_admin %>%
   mutate(total_doses = ifelse(total_doses == "" & ORDER_VOLUME_UNIT == "ML" & ConcVolUnit == "ML" & !is.na(ConcDoseUnit),
                               ORDER_VOLUME*NormConcPerMl, total_doses))
-covid_meds_admin$total_doses[is.na(covid_meds_admin$total_doses)] <- ""
-covid_meds_admin$total_doses <- as.numeric(covid_meds_admin$total_doses)
+
+covid_meds_admin <- covid_meds_admin %>% mutate(total_doses= as.numeric(total_doses))
+                                                  
+
 
 # Get correct units for total doses administered 
 covid_meds_admin <- covid_meds_admin %>%
@@ -334,33 +358,27 @@ covid_meds_admin <- covid_meds_admin %>%
                                    ifelse(ADMIN_UNIT %in% c("MG","MCG","UNITS"), ADMIN_UNIT, 
                                           ifelse(ADMIN_UNIT == "ML" & !is.na(ConcDoseUnit), ConcDoseUnit,""))))
 
-covid_meds_admin$total_doses_unit[is.na(covid_meds_admin$total_doses_unit)] <- ""
+covid_meds_admin <- covid_meds_admin %>% mutate(total_doses_unit= ifelse(is.na(total_doses_unit), "",total_doses_unit ))
+
+
 
 covid_meds_admin <- covid_meds_admin %>%
   mutate(total_doses_unit = ifelse(total_doses_unit == "" & ORDER_VOLUME_UNIT == "ML" & ConcVolUnit == "ML" & !is.na(ConcDoseUnit),
                                    ConcDoseUnit, total_doses_unit))
-covid_meds_admin$total_doses_unit[is.na(covid_meds_admin$total_doses_unit)] <- ""
 
 
 
 # Site rolllup
-covid_meds_admin$loc_rollup <- ""
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("MOUNT SINAI BETH ISRAEL"))] <- "MSBI"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("MOUNT SINAI BROOKLYN"))] <- "MSB"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("MOUNT SINAI MORNINGSIDE"))] <- "MSM"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("MOUNT SINAI QUEENS"))] <- "MSQ"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("MOUNT SINAI WEST"))] <- "MSW"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("THE MOUNT SINAI HOSPITAL"))] <- "MSH"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("X_MOUNT SINAI BI BROOKLYN_DEACTIVATED"))] <- "MSB"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("X_MOUNT SINAI BI PETRIE_DEACTIVATED"))] <- "MSBI"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("X_MOUNT SINAI QUEENS HOSPITAL"))] <- "MSQ"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("X_MOUNT SINAI ST LUKE'S_DEACTIVATED"))] <- "MSM"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("X_MOUNT SINAI WEST_DEACTIVATED"))] <- "MSW"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("1440 MADISON AVE"))] <- "MSH"
-covid_meds_admin$loc_rollup[which(covid_meds_admin$LOC_NAME %in% c("1470 MADISON AVE"))] <- "MSH"
+covid_meds_admin <- covid_meds_admin %>% mutate(loc_rollup= ifelse(str_detect(LOC_NAME, "BETH ISRAEL| BI PETRIE_DEACTIVATED"), "MSBI",
+                                                               ifelse(str_detect(LOC_NAME, "MORNINGSIDE|ST LUKE'S_DEACTIVATED"),"MSM",
+                                                                 ifelse(str_detect(LOC_NAME,"HOSPITAL|MADISON AVE"), "MSH",
+                                                                    ifelse(str_detect(LOC_NAME, "BROOKLYN"), "MSB",
+                                                                      ifelse(str_detect(LOC_NAME, "QUEENS"), "MSQ",
+                                                                        ifelse(str_detect(LOC_NAME,"WEST"), "MSW", NA )))))))
 
 
-covid_meds_admin <- covid_meds_admin %>% filter(loc_rollup != "")
+
+covid_meds_admin <- covid_meds_admin %>% filter(!is.na(loc_rollup ))
 
 
 # Bind today's data with repository
@@ -368,10 +386,11 @@ med_final_repo <- rbind(med_repo, covid_meds_admin)
 med_final_repo <- unique(med_final_repo)
 
 
+
 # Save the new repo
 write_xlsx(med_final_repo, path = paste0(wrk.dir, "\\REPO\\Med_Repo\\Covid Surge Meds Admin Repo-", Sys.Date()-1, ".xlsx"))
 
-rm(med_repo, new_med_admin)
+rm(med_repo, new_med_admin, covid_meds_admin, covid_med_groups)
 
 
 
@@ -383,14 +402,13 @@ admin_aggregated <- med_final_repo  %>% filter(MedGroup !="TOCILIZUMAB")
 inventory_data <- inventory_data %>% filter(ReportDate > "2021-07-25" )
 admin_aggregated <- admin_aggregated %>%   filter(Admin_Date > "2021-07-25" )
 
-
 setwd(wrk.dir)
 setwd("../../..")
 
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
-rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
-
+rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
+                  output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
 
 
  #--------------Render TOCI Report -----
@@ -400,5 +418,6 @@ admin_aggregated <- med_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
 
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
-rmarkdown::render("Code\\New-COVID-Surge-Meds-TOCI-Report-Rmarkdown-2021-10-05.Rmd", output_file = paste("MSHS Pharmacy Inventory Report_TOCI-", Sys.Date()), output_dir = save_output)
+rmarkdown::render("Code\\New-COVID-Surge-Meds-TOCI-Report-Rmarkdown-2021-10-05.Rmd", 
+                  output_file = paste("MSHS Pharmacy Inventory Report_TOCI-", Sys.Date()), output_dir = save_output)
 
