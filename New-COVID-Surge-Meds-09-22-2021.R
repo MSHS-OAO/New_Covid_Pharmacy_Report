@@ -153,20 +153,17 @@ inv_daily_df <- inv_daily_df %>% mutate(NDC_ID_ref = NDC_ID, NDC_CODE_ref = NDC_
 
 
 # Aggregate inventory data by site and NDC 
-inv_site_summary <- inv_daily_df  %>%
-  group_by(ReportDate, Site, PRD_NAME, NDC_ID, NDC_CODE,
-           ConcExtract, ConcDoseSize, ConcDoseUnit, ConcVolSize, ConcVolUnit,
-           NormDoseSize, NormDoseUnit,
-           InvShortName, InvSizeUnit, InvSize, InvUnit) %>%
-  summarize(Balance = sum(BALANCE),
-            TotalDoseBalance = sum(TotalDoseBalance)) %>%
-  ungroup()
+inv_site_summary <- inv_daily_df  %>%  group_by(ReportDate, Site, PRD_NAME, NDC_ID, NDC_CODE,ConcExtract, ConcDoseSize, 
+                                                ConcDoseUnit, ConcVolSize, ConcVolUnit,  NormDoseSize, NormDoseUnit,
+                                                InvShortName, InvSizeUnit, InvSize,  InvUnit) %>%
+                                                summarize(Balance = sum(BALANCE),
+                                                TotalDoseBalance = sum(TotalDoseBalance)) %>% ungroup()
 
+                                                                           
 
 inv_site_summary <- inv_site_summary %>% mutate(MedGroup= toupper(gsub("([A-Za-z]+).*", "\\1", PRD_NAME)),
                                                 MedGroup= ifelse(MedGroup == "NOREPINEPHRINE",  "NOREPINEPHRINE BITARTRATE", MedGroup))
                                                                 
-
 
 
 inv_site_summary <- inv_site_summary[!duplicated(inv_site_summary), ]
@@ -228,27 +225,14 @@ new_med_admin$med_class <- covid_med_groups$Classification[match(new_med_admin$M
 #Filter Covid data
 new_med_admin <- new_med_admin %>% filter(med_class == "COVID")
 
-##  Missing ndc id and code
-common_ndc <- new_med_admin %>%
-  filter(!is.na(NDC_ID)) %>%
-  group_by(LOC_NAME, DISPINSABLE_MED_NAME, NDC_ID) %>%
-  summarise(total = n()) %>%
-  arrange(LOC_NAME, DISPINSABLE_MED_NAME, desc(total)) %>%
-  mutate(count = 1:n()) %>% filter(count == 1)
 
-colnames(common_ndc)[colnames(common_ndc) == "NDC_ID"] <- "ndc"
 
-no_ndc <- new_med_admin %>% filter(is.na(NDC_ID))
-no_ndc <- merge(no_ndc, common_ndc[,c("LOC_NAME","DISPINSABLE_MED_NAME","ndc")], 
-                by.x = c("LOC_NAME","DISPINSABLE_MED_NAME"), by.y = c("LOC_NAME","DISPINSABLE_MED_NAME"))
+## Fill Missing NDC_ID
 
-no_ndc$NDC_ID <- no_ndc$ndc
-no_ndc <- no_ndc[,1:26]
+new_med_admin <- new_med_admin  %>% arrange(LOC_NAME, DISPINSABLE_MED_NAME)
 
-yes_ndc <-new_med_admin %>% filter(!is.na(NDC_ID))
-new_med_admin <- rbind(yes_ndc, no_ndc)
-
-rm(no_ndc, yes_ndc, common_ndc)
+new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[1], NDC_ID))
+new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[n()], NDC_ID))
 
 
 
@@ -256,8 +240,7 @@ rm(no_ndc, yes_ndc, common_ndc)
 # Data Exclusion Criteria: Exclude ADMIN_REASON = "Bolus from Infusion"
 covid_meds_admin <- new_med_admin %>% filter(ADMIN_REASON != "Bolus from Infusion")
 
-# Format columns
-
+# Format columns 
 covid_meds_admin <- covid_meds_admin %>% mutate(Admin_Date = as.Date(TAKEN_DATETIME, format="%d-%m-%y"),
                                                 MAR_DOSE = as.numeric(MAR_DOSE) )
 
@@ -406,12 +389,13 @@ setwd(wrk.dir)
 setwd("../../..")
 
 
+
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
 rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
                   output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
 
 
- #--------------Render TOCI Report -----
+  #--------------Render TOCI Report -----
 
 inventory_data <- inv_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
 admin_aggregated <- med_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
