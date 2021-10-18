@@ -1,17 +1,8 @@
 ---
-author: "HSO"
-date: "5/27/2020"
-output: 
-  html_document:
-    toc: true
-    toc_depth: 4
-    toc_float:
-      collapsed: true
-    fig_width: 7
-    fig_height: 6
+output: html_document
 ---
 
-```{r Install and load packages, echo = FALSE, warning = FALSE, message = FALSE, results='hide'}
+```{r Install and load packages, echo = FALSE, warning = FALSE, message = FALSE}
 # Code for analyzing and summarizing unit level census and COVID-19 census data ----------------------
 
 #Install and load necessary packages --------------------
@@ -56,30 +47,26 @@ library(plotly)
 # library(tidyr)
 ```
 
-<style type="text/css">
-div.main-container {
-  max-width: 1800px;
-  margin-left: auto;
-  margin-right: auto;
-}
-</style>
 
-```{r report time, echo = FALSE, warning = FALSE, message = FALSE}
+```{r Increase memory limit, echo = FALSE, warning = FALSE, message = FALSE}
 
+# Maximize R Memory Size 
+# memory.limit(size = 8000000)
+```
+```{r  Set date, echo = FALSE, warning = FALSE, message = FALSE}
+
+# Setting Dashboard Date Range
 today_date <- Sys.Date() - 1
 report_run_date <- Sys.Date()
-admin_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+admin_repo_start_date <- as.Date("2020-11-02", format="%Y-%m-%d")
 admin_repo_end_date <- today_date
-inv_repo_start_date <- as.Date("2021-07-26", format="%Y-%m-%d")
+inv_repo_start_date <- as.Date("2020-11-02", format="%Y-%m-%d")
 inv_repo_end_date <- today_date
 
 ```
 
-
-
-
 ```{r Graph asthetics, echo = FALSE, warning = FALSE, message = FALSE}
-### Color Functions for GraphS 
+### Color Functions for Graphs ============================================================
 
 # Mount Sinai corporate colors "USE THIS TO ADD COLORS"
 MountSinai_colors <- c(
@@ -179,12 +166,10 @@ scale_fill_MountSinai <- function(palette = "all", discrete = TRUE, reverse = FA
   # scale_color_MountSinai("main")
 
 ```
- 
 
 
 ```{r Map admin and inventory data using ndc, echo = FALSE, warning = FALSE, message = FALSE}
-
-
+  
 # Pull in inventory unit
 admin_aggregated$PRD_NAME <- inventory_data$PRD_NAME[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
 admin_aggregated$ConcDoseSize_inv <- inventory_data$ConcDoseSize[match(admin_aggregated$NDC_ID, inventory_data$NDC_ID)] 
@@ -200,13 +185,17 @@ admin_aggregated$TotalDosesPerInv <- admin_aggregated$NormDoseSize_inv*admin_agg
 admin_aggregated$NormDoseUnit_inv[which(admin_aggregated$NormDoseUnit_inv == "UNIT/ML")] <- "UNITS/ML" 
 admin_aggregated$ConcDoseUnit_inv[which(admin_aggregated$ConcDoseUnit_inv == "UNIT")] <- "UNITS"
 
-
+meds_wo_inv_mapping <- admin_aggregated %>% filter(is.na(inv_unit))
 admin_aggregated <- admin_aggregated %>% filter(!is.na(inv_unit))
+
 
 ```
 
 
 ```{r Calculate total inventory used in count, echo = FALSE, warning = FALSE, message = FALSE}
+
+
+
 
 admin_inv_used <- admin_aggregated %>% mutate(total_doses_unit= ifelse(total_doses_unit=="", NA, total_doses_unit))
 
@@ -222,11 +211,11 @@ admin_inv_used <- admin_inv_used %>%
   mutate(total_inv_used = ifelse(is.na(total_inv_used) & inv_unit== "ML"&  !is.na(ADMIN_AMOUNT), ceiling(ADMIN_AMOUNT/inv_size),    total_inv_used)) %>%
   mutate(total_inv_used = ifelse(is.na(total_inv_used)& inv_unit== "ML", 1, total_inv_used)) 
 
-
 ### Manual mapping of concentration: DISPINSABLE_MED_NAME | PRD_NAME (inventory concentration)
 ### 1. ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS | ALTEPLASE 50 MG INTRAVENOUS SOLUTION (50mg/50ml)
 ### 2. AZITHROMYCIN 500 MG IVPB PYXIS MINIBAG | AZITHROMYCIN 500 MG INTRAVENOUS SOLUTION (500mg/250ml)
 ### 3. remdesivir 100 mg intravenous (solution) and remdesivir 100 mg intravenous (powder) (100mg/20ml)
+
 
 admin_inv_used <- admin_inv_used %>%
   mutate(total_inv_used = ifelse(is.na(total_inv_used)& inv_unit== "EACH" & DISPINSABLE_MED_NAME == "ALTEPLASE FOR ARTERIAL AND/OR VENOUS THROMBOSIS", ORDER_VOLUME/50, total_inv_used)) %>%
@@ -238,6 +227,7 @@ admin_inv_used <- admin_inv_used %>%
                                  ORDER_VOLUME/20, total_inv_used))
 
 
+
 ## Aggregate total inventory used by patient and date
 inv_used_merged <- admin_inv_used %>% group_by(loc_rollup, Admin_Date, PAT_ID, PRD_NAME, inv_size, inv_unit) %>%
                                summarise(total_inv_used = sum(total_inv_used)) %>% mutate(total_inv_count = ceiling(total_inv_used/inv_size))  
@@ -246,6 +236,8 @@ inv_used_merged <- admin_inv_used %>% group_by(loc_rollup, Admin_Date, PAT_ID, P
 
 inv_used_site <- inv_used_merged %>% group_by(loc_rollup, Admin_Date, PRD_NAME) %>%
                                          summarise(total_inv_used = sum(total_inv_count))
+
+
 
 ```
 
@@ -278,7 +270,6 @@ inv_balance <- inventory_data %>%
   
   # Filter our sites
   inv_bal_df <- inv_bal_df %>% filter(Site %in% c("MSB","MSBI","MSH","MSHS Stockpile","MSM","MSQ","MSW"))
-  
 
 ```
 
@@ -287,15 +278,15 @@ inv_balance <- inventory_data %>%
 knitr::include_graphics("Mount_Sinai_Logo_H.png")
 ```
 
+
 # MSHS Pharmacy Inventory Dashboard
-## HCMLU
+## TOCILIZUMAB Usage and Inventory
 *Report Run Date: `r report_run_date`*<br/>
 *Administration Data Date Range: `r admin_repo_start_date` to `r admin_repo_end_date`*<br/>
 *Inventory Balance Data Date Range: `r inv_repo_start_date` to `r inv_repo_end_date`*<br/>
 ___________________________________________________________________________________________________________
 
 ```{r Summary of All Medications Function, fig.height=7, echo = FALSE, warning = FALSE, message = FALSE}
-
 
 all_meds_usage_balance_tb <- function(site) {
 
@@ -471,7 +462,6 @@ grid.draw(ggarrange(inv_usage_last3_graph, inv_bal_last3_graph, ncol=2, nrow=1, 
 ```
 
 
-
 ```{r Total Inventory Used Graph Function, echo = FALSE, warning = FALSE, message = FALSE}
 
 # Inventory Used and Remaining Graph
@@ -510,8 +500,9 @@ inventory_used_graph <- function(site, medication) {
     guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
                                      min(length(unique(inv_df$PRD_NAME)),5)))+
      theme_bw() +
-     theme(plot.title = element_text(size = 18, hjust = 0.5), 
-          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+     theme(plot.title = element_text(size = 18, vjust = 2), 
+           legend.position='top', 
+           legend.justification='left', legend.text = element_text(size=10), legend.title = element_blank(),
           plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
           axis.title.y=element_text(size=12,face="bold"),
           axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
@@ -526,7 +517,9 @@ inventory_used_graph <- function(site, medication) {
       accuracy = 0.1),
       limits = c(0, max(max_unit$total)*1.2))+
       scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
-                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))+
+          geom_text(aes(label=total_inv_count_used), color="white", 
+            size=3, position = position_stack(vjust = 0.5))
     #  geom_text(aes(label=ifelse(total_inv_count_used == 0,"",total_inv_count_used)), color="white",
     #           size=2, position = position_stack(vjust = 0.5))+
     # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y.., big.mark = ',')), group = ReportDate),
@@ -578,8 +571,9 @@ inventory_remaining_graph <- function(site, medication) {
     guides(colour = guide_legend(title = NULL, nrow = length(unique(inv_df$PRD_NAME))/
                                      min(length(unique(inv_df$PRD_NAME)),5)))+
      theme_bw() +
-     theme(plot.title = element_text(size = 18, hjust = 0.5), 
-          legend.position = "bottom", legend.text = element_text(size=10), legend.title = element_blank(),
+     theme(plot.title = element_text(size = 18, vjust = 2), 
+           legend.position='top', 
+           legend.justification='left', legend.text = element_text(size=10), legend.title = element_blank(),
           plot.subtitle = element_text(size = 12, hjust = 0.5, face = "italic"), 
           axis.title.y=element_text(size=12,face="bold"),
           axis.text.x = element_text(size = 12, angle = 30, hjust = 1), 
@@ -594,7 +588,9 @@ inventory_remaining_graph <- function(site, medication) {
       accuracy = 0.1),
       limits = c(0, max(max_unit$total)*1.2))+
       scale_x_date(breaks = "day", date_labels = "%Y-%m-%d", date_breaks = "2 days", 
-                   date_minor_breaks = "1 day", expand = c(0, 0.6))
+                   date_minor_breaks = "1 day", expand = c(0, 0.6))+
+      geom_text(aes(label=total_inv_balance), color="white", 
+            size=3, position = position_stack(vjust = 0.5))
     #  geom_text(aes(label=ifelse(total_inv_balance== 0,"",total_inv_balance)), color="white",
     #           size=2, position = position_stack(vjust = 0.5))+
     # stat_summary(fun.y = sum, vjust = -1, aes(label=ifelse(..y.. == 0,"",prettyNum(..y..,big.mark = ',')), group = ReportDate),
@@ -607,90 +603,327 @@ inventory_remaining_graph <- function(site, medication) {
 
 ```
 
+<style>
+  .superbigimage{
+      overflow-x:scroll;
+      white-space: nowrap;
+  }
+
+  .superbigimage img{
+     max-width: none;
+  }
 
 
-```{r MSHS Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+</style>
 
-  
+### {.tabset}
+#### MSHS
+```{r MSHS Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
   sites <- unique(inv_bal_df$Site)
   sites <- as.vector(sites)
-  
-  # sites <- c("MSB","MSH","MSM","MSQ","MSW")
 
   meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
   meds <- as.vector(unique(meds$MedGroup))
 
-  cat(" \n##","MSHS\n")
-  cat(" \n### All Medications", "\n")
+  cat(all_meds_usage_balance_tb(sites))
   
-  all_meds_usage_balance_tb(sites)
-  
-  #print(all_meds_usage_balance_tb(sites))
-
-  cat(" \n")
-
   for(j in meds) {
-
-    cat(" \n###", j, "\n")
-    
     inv_last3_graph(sites, medication = j)
-    inventory_used_graph(sites, medication = j)
-    inventory_remaining_graph(sites, medication = j)
-
     cat(" \n")
   }
 
-
 ```
 
+<div class="superbigimage">
+```{r MSHS Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
 
-```{r Site Graphs and Tables Output, fig.height = 7, fig.width = 13, echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+  sites <- unique(inv_bal_df$Site)
+  sites <- as.vector(sites)
 
-# sites <- unique(inv_bal_df$Site)
-# sites <- as.vector(sites)
-
-sites <- c("MSB","MSBI","MSH","MSM","MSQ","MSW")
-
-
-for (i in sites) {
-
-  cat(" \n##", i,"\n")
-  cat(" \n### All Medications", "\n")
-  
-  
-  cat(all_meds_usage_balance_tb(site = i))
-  #print(all_meds_usage_balance_tb(site = "MSH"))
-
-  cat(" \n")
-
-  meds <- inv_bal_df %>% filter(Site == i) %>% arrange(MedGroup)
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
   meds <- as.vector(unique(meds$MedGroup))
 
   for(j in meds) {
-    cat(" \n###", j, "\n")
-    
-    inv_last3_graph(site = i, medication = j)
-    inventory_used_graph(site = i, medication = j)
-    inventory_remaining_graph(site = i, medication = j)
+    inventory_used_graph(sites, medication = j)
     cat(" \n")
-
   }
- }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSHS Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE,warning = FALSE, message = FALSE, results="asis"}
+
+  sites <- unique(inv_bal_df$Site)
+  sites <- as.vector(sites)
+  
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_remaining_graph(sites, medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSB
+```{r MSB Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSB"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSB", medication = j)
+    cat(" \n")
+  }
 
 ```
 
+<div class="superbigimage">
+```{r MSB Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
 
-</br>
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
 
+  for(j in meds) {
+    inventory_used_graph("MSB", medication = j)
+    cat(" \n")
+  }
 
-## *About This Report
-### 1. Data Reports
-+ **COVID Surge Med Admin Report** includes patient-level medication administration data; created in EPIC Clarity and updated every midnight.
-+ **COVID Surge Med WINV Balance Report** includes inventory balances; pulled from EPIC Willow Inventory every morning at 9:34 AM. 
+```
+</div>
 
-### 2. ERX and PRD Mapping
-+ ERX and PRD mapping was done based on NDC ID. For ERXs missing NDC IDs, most commonly used PRD for the respective ERX at each site was used. 
-<!-- + Below table summarizes the list of medications and their mapped inventory items included in this dashboard by each MSHS site. All inventory items are tracked in count, in a form of either ML (e.g., vials) or EACH (e.g., tablets). The inclusion criteria and mapping were provided by the MSHS Pharmacy team.   -->
+<div class="superbigimage">
+```{r MSB Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
 
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
 
-</br>
+  for(j in meds) {
+    inventory_remaining_graph("MSB", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSBI
+```{r MSBI Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSBI"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSBI", medication = j)
+    cat(" \n")
+  }
+
+```
+
+<div class="superbigimage">
+```{r MSBI Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_used_graph("MSBI", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSBI Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_remaining_graph("MSBI", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSH
+```{r MSH Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSH"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSH", medication = j)
+    cat(" \n")
+  }
+
+```
+
+<div class="superbigimage">
+```{r MSH Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_used_graph("MSH", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSH Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_remaining_graph("MSH", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSM
+```{r MSM Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSM"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSM", medication = j)
+    cat(" \n")
+  }
+
+```
+
+<div class="superbigimage">
+```{r MSM Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_used_graph("MSM", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSM Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_remaining_graph("MSM", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSQ
+```{r MSQ Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSQ"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSQ", medication = j)
+    cat(" \n")
+  }
+
+```
+
+<div class="superbigimage">
+```{r MSQ Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_used_graph("MSQ", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSQ Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))    
+
+  for(j in meds) {
+    inventory_remaining_graph("MSQ", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+#### MSW
+```{r MSW Graphs and Tables Output1, fig.height = 7, fig.width = 13, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  cat(all_meds_usage_balance_tb("MSW"))
+  
+  for(j in meds) {
+    inv_last3_graph("MSW", medication = j)
+    cat(" \n")
+  }
+
+```
+
+<div class="superbigimage">
+```{r MSW Graphs and Tables Output3, fig.height = 7, fig.width = 80, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_used_graph("MSW", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
+<div class="superbigimage">
+```{r MSW Graphs and Tables Output4, fig.height = 7, fig.width = 130, fig.align = "center", echo = FALSE, warning = FALSE, message = FALSE, results="asis"}
+
+  meds <- inv_bal_df %>% filter(Site %in% sites) %>% arrange(MedGroup)
+  meds <- as.vector(unique(meds$MedGroup))
+
+  for(j in meds) {
+    inventory_remaining_graph("MSW", medication = j)
+    cat(" \n")
+  }
+
+```
+</div>
+
