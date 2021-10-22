@@ -75,18 +75,10 @@ inv_daily_df <- inv_daily_df %>% mutate(Site = ifelse(str_detect("MSHS COVID 19 
                                                     Site=ifelse(Site== "BI","MSBI" , Site))
 
 # Extract inventory item concentration
-
-# Pattern 1: x MCG/y ML
-conc_pattern_1 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MCG/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)"
-
-# Pattern 2: x MG/y ML
-conc_pattern_2 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MG/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)"
-
-# Pattern 3: x MG 
-conc_pattern_3 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MG)\\s"
-
-# Pattern 4: x UNIT/ y ML
-conc_pattern_4 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(UNIT/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)"
+conc_pattern_1 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MCG/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)" # Pattern 1: x MCG/y ML
+conc_pattern_2 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MG/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)"  # Pattern 2: x MG/y ML
+conc_pattern_3 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(MG)\\s" # Pattern 3: x MG 
+conc_pattern_4 <- "[0-9]+(\\.|\\,)*[0-9]*\\s(UNIT/)[0-9]*(\\.|\\,)*[0-9]*\\s*(ML)" # Pattern 4: x UNIT/ y ML
 
 # Extract inventory concentration from PRD_NAME
 inv_daily_df <- inv_daily_df %>% mutate(ConcExtract = ifelse(str_detect(PRD_NAME, conc_pattern_1), str_extract(PRD_NAME, conc_pattern_1),
@@ -228,9 +220,9 @@ new_med_admin <- new_med_admin %>% filter(med_class == "COVID")
 
 
 ## Fill Missing NDC_ID
-
 new_med_admin <- new_med_admin  %>% arrange(LOC_NAME, DISPINSABLE_MED_NAME)
 
+new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% fill(NDC_ID,.direction = c("down", "up", "downup", "updown"))
 new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[1], NDC_ID))
 new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[n()], NDC_ID))
 
@@ -388,10 +380,10 @@ admin_aggregated <- admin_aggregated %>%   filter(Admin_Date > "2021-07-25" )
 setwd(wrk.dir)
 setwd("../../..")
 
-
+setwd("C:\\Users\\aghaer01\\Downloads\\Code")
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
-rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
+rmarkdown::render("New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
                   output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
 
 
@@ -399,6 +391,7 @@ rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.
 
 inventory_data <- inv_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
 admin_aggregated <- med_final_repo  %>% filter(MedGroup =="TOCILIZUMAB")
+
 
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
