@@ -226,7 +226,7 @@ new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>%
 new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[1], NDC_ID))
 new_med_admin <- new_med_admin  %>% group_by(LOC_NAME, DISPINSABLE_MED_NAME) %>% mutate(NDC_ID=ifelse(is.na(NDC_ID), NDC_ID[n()], NDC_ID))
 
-
+new_med_admin <- new_med_admin %>% ungroup()
 
 # Calculate total daily usage by patient
 # Data Exclusion Criteria: Exclude ADMIN_REASON = "Bolus from Infusion"
@@ -311,10 +311,9 @@ covid_meds_admin$NormConcPerMl <- as.numeric(covid_meds_admin$NormConcPerMl)
 
 
 # Calculate total doses administered
-covid_meds_admin <- covid_meds_admin %>%
-  mutate(total_doses = ifelse(MAR_DOSE_UNITS %in% c("MG","MCG","UNITS"), MAR_DOSE,
-                              ifelse(ADMIN_UNIT %in% c("MG","MCG","UNITS"), ADMIN_AMOUNT, 
-                                     ifelse(ADMIN_UNIT == "ML" & !is.na(ConcDoseUnit), ADMIN_AMOUNT*NormConcPerMl,""))))
+covid_meds_admin <- covid_meds_admin %>% mutate(total_doses = ifelse(MAR_DOSE_UNITS %in% c("MG","MCG","UNITS"), MAR_DOSE,
+                                                 ifelse(ADMIN_UNIT %in% c("MG","MCG","UNITS"), ADMIN_AMOUNT, 
+                                                   ifelse(ADMIN_UNIT == "ML" & !is.na(ConcDoseUnit), ADMIN_AMOUNT*NormConcPerMl,""))))
 
 covid_meds_admin <- covid_meds_admin %>% mutate(total_doses= ifelse(is.na(total_doses), "",total_doses ))
 
@@ -380,10 +379,10 @@ admin_aggregated <- admin_aggregated %>%   filter(Admin_Date > "2021-07-25" )
 setwd(wrk.dir)
 setwd("../../..")
 
-setwd("C:\\Users\\aghaer01\\Downloads\\Code")
+#setwd("C:\\Users\\aghaer01\\Downloads\\Code")
 
 save_output <- paste0(getwd(), "\\Daily Reporting Output")
-rmarkdown::render("New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
+rmarkdown::render("Code\\New-COVID-Surge-Meds-HCMLU-Report-Rmarkdown-2021-10-05.Rmd", 
                   output_file = paste("MSHS Pharmacy Inventory Report_HCMLU-", Sys.Date()), output_dir = save_output)
 
 
